@@ -6,7 +6,6 @@ import {
   useUser,
 } from '@clerk/react';
 import {
-  Wallet,
   TrendingUp,
   RefreshCw,
   Plus,
@@ -16,7 +15,7 @@ import {
   CheckCircle2,
   ShieldCheck,
   KeyRound,
-  Sparkles,
+  FileSpreadsheet,
   Sun,
   Moon,
   Laptop,
@@ -120,8 +119,8 @@ export const App: React.FC = () => {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
         <div className="max-w-md w-full text-center mb-8 relative z-10">
-          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-700 shadow-md mb-4 logo-container">
-            <Wallet className="w-6 h-6 text-white" />
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-indigo-600 shadow-sm mb-4 logo-container select-none">
+            <span className="font-mono text-lg font-extrabold tracking-tight text-white">FP</span>
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">
             {t('appTitle')}
@@ -157,8 +156,8 @@ export const App: React.FC = () => {
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-teal-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 logo-container">
-              <Wallet className="w-5 h-5 text-white" />
+            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-sm logo-container select-none">
+              <span className="font-mono text-sm font-extrabold tracking-tight text-white">FP</span>
             </div>
             <div>
               <h1 className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
@@ -242,10 +241,10 @@ export const App: React.FC = () => {
 
             <button
               onClick={() => setIsCsvModalOpen(true)}
-              className="btn-importer px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm shadow-indigo-900/30 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="btn-importer px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
               title={t('importerSubtitle')}
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
+              <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               <span className="hidden sm:inline">{t('importData')}</span>
             </button>
 

@@ -7,13 +7,13 @@ import {
   AlertCircle,
   FileSpreadsheet,
   FileText,
-  Sparkles,
   Lock,
   ArrowRight,
   Trash2,
   RefreshCw,
   ClipboardPaste,
   Maximize2,
+  Activity,
 } from 'lucide-react';
 import { createTransactionsBatch, parseStatementAi, type TokenUsage } from '../lib/api';
 import { extractTextFromPdf, arrayBufferToBase64 } from '../lib/pdfParser';
@@ -475,7 +475,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pr-8">
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <FileSpreadsheet className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
               <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t('importerTitle')}</h2>
             </div>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t('importerSubtitle')}</p>
@@ -565,12 +565,12 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
         {/* Loading Overlay */}
         {loading && (
-          <div className="absolute inset-0 bg-slate-950/80 backdrop-blur-sm z-40 rounded-2xl flex flex-col items-center justify-center p-6 text-center">
-            <div className="w-14 h-14 rounded-2xl bg-indigo-900/50 border border-indigo-500/50 flex items-center justify-center text-indigo-400 mb-4 animate-bounce">
-              <Sparkles className="w-7 h-7" />
+          <div className="absolute inset-0 bg-white/95 dark:bg-slate-950/85 backdrop-blur-sm z-40 rounded-2xl flex flex-col items-center justify-center p-6 text-center shadow-lg">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 dark:bg-indigo-900/50 dark:border-indigo-500/50 dark:text-indigo-400 flex items-center justify-center mb-4 shadow-sm animate-bounce">
+              <RefreshCw className="w-7 h-7 animate-spin" />
             </div>
-            <p className="text-base font-bold text-white mb-1.5">{t('processingAi')}</p>
-            <p className="text-xs text-indigo-300 animate-pulse">{loadingStatus || 'กำลังประมวลผล...'}</p>
+            <p className="text-base font-bold text-slate-900 dark:text-white mb-1.5">{t('processingAi')}</p>
+            <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium animate-pulse">{loadingStatus || 'กำลังประมวลผล...'}</p>
           </div>
         )}
 
@@ -593,7 +593,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             <p className="text-base font-bold text-slate-800 dark:text-white mb-1">{t('dragPdfHint')}</p>
             <p className="text-xs text-slate-600 dark:text-slate-400 max-w-lg mb-3">{t('dragPdfSupport')}</p>
             <div className="flex items-center gap-2 text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 dark:text-indigo-400 dark:bg-indigo-950/50 dark:border-indigo-800/40 px-3 py-1 rounded-full">
-              <Sparkles className="w-3.5 h-3.5" />
+              <Check className="w-3.5 h-3.5" />
               <span>{t('dragPdfFeature')}</span>
             </div>
           </div>
@@ -602,7 +602,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
         {/* 2. Direct Text Paste View */}
         {rows.length === 0 && activeTab === 'paste' && (
           <div className="flex flex-col flex-1 gap-3">
-            <p className="text-xs text-slate-400">{t('pasteHint')}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400">{t('pasteHint')}</p>
             <textarea
               value={pastedText}
               onChange={(e) => setPastedText(e.target.value)}
@@ -612,9 +612,9 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             <button
               onClick={handleDirectTextSubmit}
               disabled={loading || !pastedText.trim()}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition self-end flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer btn-primary-indigo"
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition self-end flex items-center gap-1.5 shadow-sm cursor-pointer btn-primary-indigo"
             >
-              <Sparkles className="w-4 h-4 text-white" />
+              <FileText className="w-4 h-4 text-white" />
               <span className="text-white">{t('btnAnalyzeAi')}</span>
             </button>
           </div>
@@ -657,28 +657,28 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
         {rows.length > 0 && (
           <div className="flex flex-col flex-1 overflow-hidden space-y-3">
             {/* Top Toolbar */}
-            <div className="flex flex-wrap items-center justify-between text-xs bg-slate-950/70 px-4 py-2.5 rounded-xl border border-slate-800 gap-2">
+            <div className="flex flex-wrap items-center justify-between text-xs bg-slate-100 dark:bg-slate-950/70 px-4 py-2.5 rounded-xl border border-slate-200 dark:border-slate-800 gap-2">
               <div className="flex items-center gap-2">
-                <span className="text-slate-400">{t('dataSource')}:</span>
-                <span className="font-semibold text-white font-mono bg-slate-800 px-2 py-0.5 rounded">
+                <span className="text-slate-600 dark:text-slate-400">{t('dataSource')}:</span>
+                <span className="font-semibold text-slate-800 dark:text-white font-mono bg-slate-200 dark:bg-slate-800 px-2 py-0.5 rounded border border-slate-300 dark:border-transparent">
                   {fileName || t('importedFileDefault')}
                 </span>
               </div>
 
               <div className="flex items-center gap-3">
-                <span className="text-emerald-400 font-semibold flex items-center gap-1">
+                <span className="text-emerald-700 dark:text-emerald-400 font-semibold flex items-center gap-1">
                   <Check className="w-3.5 h-3.5" />
                   <span>{t('validCount', { n: validCount })}</span>
                 </span>
 
                 {totalAmount > 0 && (
-                  <span className="text-slate-300 font-semibold border-l border-slate-700 pl-3">
-                    {t('totalAmountSum')}: <span className="text-emerald-400 font-mono">{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> {t('currencyBaht')}
+                  <span className="text-slate-700 dark:text-slate-300 font-semibold border-l border-slate-300 dark:border-slate-700 pl-3">
+                    {t('totalAmountSum')}: <span className="text-emerald-700 dark:text-emerald-400 font-mono font-bold">{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> {t('currencyBaht')}
                   </span>
                 )}
 
                 {invalidCount > 0 && (
-                  <span className="text-rose-400 font-semibold flex items-center gap-1 border-l border-slate-700 pl-3">
+                  <span className="text-rose-600 dark:text-rose-400 font-semibold flex items-center gap-1 border-l border-slate-300 dark:border-slate-700 pl-3">
                     <AlertCircle className="w-3.5 h-3.5" />
                     <span>{t('invalidCount', { n: invalidCount })}</span>
                   </span>
@@ -691,7 +691,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                     setErrorMessage(null);
                     setTokenUsage(null);
                   }}
-                  className="text-xs text-slate-400 hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-slate-800 hover:bg-slate-700 transition cursor-pointer"
+                  className="text-xs text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white flex items-center gap-1 px-2.5 py-1 rounded bg-slate-200 hover:bg-slate-300 dark:bg-slate-800 dark:hover:bg-slate-700 transition cursor-pointer"
                 >
                   <RefreshCw className="w-3 h-3" />
                   <span>{t('reupload')}</span>
@@ -700,18 +700,18 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             </div>
 
             {/* Hint for dragging columns */}
-            <div className="text-[11px] text-slate-500 flex items-center gap-1.5 px-1">
+            <div className="text-[11px] text-slate-500 dark:text-slate-400 flex items-center gap-1.5 px-1">
               <Maximize2 className="w-3 h-3 text-slate-400" />
               <span>{t('colResizeHint')}</span>
             </div>
 
             {/* Editable Preview Table with Resizable Columns */}
-            <div className="flex-1 overflow-auto rounded-xl border border-slate-800 bg-slate-950/50">
-              <table className="w-full text-left text-xs text-slate-300 border-collapse table-fixed">
-                <thead className="bg-slate-900 sticky top-0 border-b border-slate-800 z-10 text-[11px] uppercase tracking-wider text-slate-400 font-semibold select-none">
+            <div className="flex-1 overflow-auto rounded-xl border border-slate-200 dark:border-slate-800 bg-white dark:bg-slate-950/50 shadow-sm">
+              <table className="w-full text-left text-xs text-slate-800 dark:text-slate-300 border-collapse table-fixed">
+                <thead className="bg-slate-100 dark:bg-slate-900 sticky top-0 border-b border-slate-200 dark:border-slate-800 z-10 text-[11px] uppercase tracking-wider text-slate-700 dark:text-slate-300 font-bold select-none shadow-sm">
                   <tr>
                     {/* Index */}
-                    <th style={{ width: colWidths.index }} className="py-2.5 px-2 text-center text-slate-500 relative">
+                    <th style={{ width: colWidths.index }} className="py-2.5 px-2 text-center text-slate-500 dark:text-slate-400 relative">
                       #
                     </th>
 
@@ -720,7 +720,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('effectiveDate')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('date', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -729,16 +729,16 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('platformHeader')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('platform', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
-                    {/* Fund Code & Name - Resizable column without static highlight */}
+                    {/* Fund Code & Name */}
                     <th style={{ width: colWidths.fundCode }} className="py-2.5 px-3 whitespace-nowrap relative">
                       <span>{t('fundCodeName')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('fundCode', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -747,7 +747,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('transType')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('type', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -756,16 +756,16 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('amountThb')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('amount', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
                     {/* NAV on Effective Date */}
-                    <th style={{ width: colWidths.nav }} className="py-2.5 px-2.5 text-right whitespace-nowrap text-indigo-300 relative">
+                    <th style={{ width: colWidths.nav }} className="py-2.5 px-2.5 text-right whitespace-nowrap text-indigo-700 dark:text-indigo-300 font-bold relative">
                       <span>{t('navOnEffective')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('nav', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -774,7 +774,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('unitsHeader')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('units', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -783,7 +783,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('feeThb')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('fee', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -792,7 +792,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <span>{t('noteText')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('note', e)}
-                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
+                        className="absolute right-0 top-0 bottom-0 w-2 cursor-col-resize hover:bg-indigo-500/40 z-20"
                       />
                     </th>
 
@@ -803,15 +803,15 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                   </tr>
                 </thead>
 
-                <tbody className="divide-y divide-slate-800/60 font-mono">
+                <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 font-mono text-xs">
                   {rows.map((row, idx) => (
                     <tr
                       key={idx}
-                      className={`hover:bg-slate-800/40 transition ${
-                        !row.isValid ? 'bg-rose-950/20' : ''
+                      className={`hover:bg-indigo-50/40 dark:hover:bg-slate-800/40 transition ${
+                        !row.isValid ? 'bg-rose-50/70 dark:bg-rose-950/20' : idx % 2 === 1 ? 'bg-slate-50/50 dark:bg-slate-900/20' : ''
                       }`}
                     >
-                      <td style={{ width: colWidths.index }} className="py-2 px-2 text-slate-500 text-[10px] text-center">
+                      <td style={{ width: colWidths.index }} className="py-2 px-2 text-slate-500 dark:text-slate-400 text-[11px] text-center font-sans font-semibold">
                         {idx + 1}
                       </td>
 
@@ -821,7 +821,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                           type="text"
                           value={row.date}
                           onChange={(e) => handleCellChange(idx, 'date', e.target.value)}
-                          className="w-full bg-slate-900/60 border border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 rounded px-2 py-1 text-white text-center focus:outline-none"
+                          className="w-full bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700/60 hover:border-slate-400 dark:hover:border-slate-500 focus:border-indigo-500 rounded px-2 py-1 text-slate-900 dark:text-white text-center font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
                         />
                       </td>
 
@@ -830,17 +830,17 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                         <PlatformBadge platform={row.platform} />
                       </td>
 
-                      {/* Fund Code & Name - Full text display & flexible */}
+                      {/* Fund Code & Name */}
                       <td style={{ width: colWidths.fundCode }} className="py-2 px-3">
                         <input
                           type="text"
                           value={row.fundCode}
                           title={row.fundCode}
                           onChange={(e) => handleCellChange(idx, 'fundCode', e.target.value)}
-                          className={`w-full bg-slate-900/70 border rounded px-2.5 py-1 font-medium font-sans focus:outline-none transition ${
+                          className={`w-full bg-white dark:bg-slate-900/70 border rounded px-2.5 py-1 font-medium font-sans focus:outline-none focus:ring-1 transition ${
                             !row.fundCode
-                              ? 'border-rose-500 text-rose-300'
-                              : 'border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 text-indigo-300'
+                              ? 'border-rose-500 text-rose-600 dark:text-rose-300 focus:ring-rose-500/30'
+                              : 'border-slate-300 dark:border-slate-700/60 hover:border-slate-400 dark:hover:border-slate-500 focus:border-indigo-500 text-slate-900 dark:text-indigo-300 focus:ring-indigo-500/30 font-semibold'
                           }`}
                         />
                       </td>
@@ -850,7 +850,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                         <select
                           value={row.type}
                           onChange={(e) => handleCellChange(idx, 'type', e.target.value)}
-                          className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500"
+                          className="w-full bg-white dark:bg-slate-900 border border-slate-300 dark:border-slate-700 rounded px-2 py-1 text-[11px] font-sans font-semibold text-slate-900 dark:text-white focus:outline-none focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500/30 cursor-pointer"
                         >
                           <option value="BUY">{t('buy')}</option>
                           <option value="SELL">{t('sell')}</option>
@@ -859,7 +859,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       </td>
 
                       {/* Total Amount (Units * NAV) */}
-                      <td style={{ width: colWidths.amount }} className="py-2 px-2.5 text-right font-mono text-emerald-400 font-semibold whitespace-nowrap">
+                      <td style={{ width: colWidths.amount }} className="py-2 px-2.5 text-right font-mono text-emerald-700 dark:text-emerald-400 font-bold whitespace-nowrap">
                         {!isNaN(parseFloat(row.units)) && !isNaN(parseFloat(row.unitPrice))
                           ? (parseFloat(row.units) * parseFloat(row.unitPrice)).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
@@ -876,10 +876,10 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                           title={t('navOnEffective')}
                           placeholder="NAV..."
                           onChange={(e) => handleCellChange(idx, 'unitPrice', e.target.value)}
-                          className={`w-full bg-slate-900/60 border rounded px-2 py-1 text-right focus:outline-none ${
+                          className={`w-full bg-white dark:bg-slate-900/60 border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 font-mono ${
                             !row.unitPrice || isNaN(parseFloat(row.unitPrice))
-                              ? 'border-rose-500 text-rose-300'
-                              : 'border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 text-indigo-300 font-bold'
+                              ? 'border-rose-500 text-rose-600 dark:text-rose-300 focus:ring-rose-500/30'
+                              : 'border-slate-300 dark:border-slate-700/60 hover:border-slate-400 dark:hover:border-slate-500 focus:border-indigo-500 text-indigo-700 dark:text-indigo-300 font-bold focus:ring-indigo-500/30'
                           }`}
                         />
                       </td>
@@ -890,10 +890,10 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                           type="text"
                           value={row.units}
                           onChange={(e) => handleCellChange(idx, 'units', e.target.value)}
-                          className={`w-full bg-slate-900/60 border rounded px-2 py-1 text-right focus:outline-none ${
+                          className={`w-full bg-white dark:bg-slate-900/60 border rounded px-2 py-1 text-right focus:outline-none focus:ring-1 font-mono ${
                             !row.units || isNaN(parseFloat(row.units))
-                              ? 'border-rose-500 text-rose-300'
-                              : 'border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 text-white'
+                              ? 'border-rose-500 text-rose-600 dark:text-rose-300 focus:ring-rose-500/30'
+                              : 'border-slate-300 dark:border-slate-700/60 hover:border-slate-400 dark:hover:border-slate-500 focus:border-indigo-500 text-slate-900 dark:text-white font-medium focus:ring-indigo-500/30'
                           }`}
                         />
                       </td>
@@ -904,7 +904,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                           type="text"
                           value={row.fee}
                           onChange={(e) => handleCellChange(idx, 'fee', e.target.value)}
-                          className="w-full bg-slate-900/60 border border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 rounded px-2 py-1 text-right text-slate-400 focus:outline-none"
+                          className="w-full bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700/60 hover:border-slate-400 dark:hover:border-slate-500 focus:border-indigo-500 rounded px-2 py-1 text-right text-slate-700 dark:text-slate-400 font-mono focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
                         />
                       </td>
 
@@ -916,7 +916,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                           placeholder={`${t('noteText')}...`}
                           title={row.note}
                           onChange={(e) => handleCellChange(idx, 'note', e.target.value)}
-                          className="w-full bg-slate-900/60 border border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 rounded px-2.5 py-1 text-slate-300 text-[11px] focus:outline-none"
+                          className="w-full bg-white dark:bg-slate-900/60 border border-slate-300 dark:border-slate-700/60 hover:border-slate-400 dark:hover:border-slate-500 focus:border-indigo-500 rounded px-2.5 py-1 text-slate-800 dark:text-slate-300 text-[11px] font-sans focus:outline-none focus:ring-1 focus:ring-indigo-500/30"
                         />
                       </td>
 
@@ -924,7 +924,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <td style={{ width: colWidths.action }} className="py-2 px-2 text-center">
                         <button
                           onClick={() => handleDeleteRow(idx)}
-                          className="text-slate-400 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer min-w-[32px] min-h-[32px] inline-flex items-center justify-center focus-visible:ring-2 focus-visible:ring-rose-500"
+                          className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer min-w-[32px] min-h-[32px] inline-flex items-center justify-center focus-visible:ring-2 focus-visible:ring-rose-500"
                           title={t('deleteRowTooltip')}
                           aria-label={t('deleteRowTooltip')}
                         >
@@ -938,7 +938,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             </div>
 
             {/* Bottom Modal Actions */}
-            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-200 dark:border-slate-800">
               <div className="flex items-center gap-3">
                 <button
                   type="button"
@@ -948,8 +948,8 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                   {t('btnCancel')}
                 </button>
                 {tokenUsage && (
-                  <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 border-l border-slate-700 pl-3">
-                    <Sparkles className="w-3.5 h-3.5 text-indigo-400/80 shrink-0" />
+                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 border-l border-slate-300 dark:border-slate-700 pl-3">
+                    <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <span>
                       {t('geminiTokens')}: {tokenUsage.total_tokens.toLocaleString()} (Prompt: {tokenUsage.prompt_tokens.toLocaleString()} / Output: {tokenUsage.candidates_tokens.toLocaleString()})
                     </span>
@@ -961,7 +961,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                 type="button"
                 onClick={handleImportSubmit}
                 disabled={loading || validCount === 0}
-                className="btn-confirm-import flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-900/30 cursor-pointer"
+                className="btn-confirm-import flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-sm cursor-pointer"
               >
                 <Check className="w-4 h-4" />
                 <span>{t('btnConfirmImport', { n: validCount })}</span>
