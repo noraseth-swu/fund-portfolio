@@ -308,7 +308,21 @@ interface I18nContextType {
   t: (key: keyof typeof translations['th'], params?: Record<string, string | number>) => string;
 }
 
-const I18nContext = createContext<I18nContextType | null>(null);
+const defaultContextValue: I18nContextType = {
+  locale: 'th',
+  setLocale: () => {},
+  t: (key, params) => {
+    let str = translations['th'][key] || String(key);
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        str = str.replace(`{${k}}`, String(v));
+      });
+    }
+    return str;
+  },
+};
+
+const I18nContext = createContext<I18nContextType>(defaultContextValue);
 
 export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
   const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
@@ -346,38 +360,6 @@ export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children
   );
 };
 
-export function useI18n() {
-  const context = useContext(I18nContext);
-  if (context) return context;
-
-  // Global event fallback for components rendered outside I18nProvider
-  const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
-
-  useEffect(() => {
-    const handleSync = (e: any) => {
-      if (e.detail && (e.detail === 'th' || e.detail === 'en')) {
-        setLocaleState(e.detail);
-      }
-    };
-    window.addEventListener(LOCALE_CHANGE_EVENT, handleSync);
-    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleSync);
-  }, []);
-
-  const changeLocale = (newLocale: Locale) => {
-    setLocaleState(newLocale);
-    localStorage.setItem(LOCALE_KEY, newLocale);
-    window.dispatchEvent(new CustomEvent(LOCALE_CHANGE_EVENT, { detail: newLocale }));
-  };
-
-  const t = (key: keyof typeof translations['th'], params?: Record<string, string | number>): string => {
-    let str = translations[locale]?.[key] || translations['th'][key] || String(key);
-    if (params) {
-      Object.entries(params).forEach(([k, v]) => {
-        str = str.replace(`{${k}}`, String(v));
-      });
-    }
-    return str;
-  };
-
-  return { locale, setLocale: changeLocale, t };
+export function useI18n(): I18nContextType {
+  return useContext(I18nContext);
 }
