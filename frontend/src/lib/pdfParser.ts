@@ -9,6 +9,42 @@ export interface PdfParseResult {
   needsPassword?: boolean;
 }
 
+export function cleanPdfExtractedText(raw: string): string {
+  if (!raw) return '';
+
+  const boilerplateKeywords = [
+    'การลงทุนมีความเสี่ยง',
+    'ผู้ลงทุนควรทำความเข้าใจ',
+    'ผู้ลงทุนควรศึกษา',
+    'สอบถามข้อมูลเพิ่มเติม',
+    'เอกสารนี้พิมพ์จากระบบ',
+    'ttb contact center',
+    'www.ttbbank.com',
+    'www.kasikornasset.com',
+    'www.scbam.com',
+  ];
+
+  const lines = raw.split(/\r?\n/);
+  const cleanedLines: string[] = [];
+
+  for (const line of lines) {
+    const trimmed = line.trim().replace(/\s{2,}/g, ' ');
+    if (!trimmed) continue;
+
+    // Skip pure legal boilerplate only if it doesn't contain financial numbers or dates
+    const isBoilerplate = boilerplateKeywords.some((kw) => trimmed.includes(kw));
+    const hasDecimalOrDate = /\d+\.\d{2,}|\d{4}-\d{2}-\d{2}|\d{1,2}\/\d{1,2}\/\d{2,4}/.test(trimmed);
+
+    if (isBoilerplate && !hasDecimalOrDate) {
+      continue;
+    }
+
+    cleanedLines.push(trimmed);
+  }
+
+  return cleanedLines.join('\n');
+}
+
 export async function extractTextFromPdf(
   fileBuffer: ArrayBuffer,
   password?: string
@@ -29,12 +65,17 @@ export async function extractTextFromPdf(
       const content = await page.getTextContent();
       const pageStrings = content.items
         .map((item: any) => ('str' in item ? item.str : ''))
-        .join(' ');
+        .filter((str: string) => str.trim().length > 0)
+        .join(' ')
+        .replace(/\s{2,}/g, ' ');
+
       fullText += `--- Page ${i} ---\n${pageStrings}\n\n`;
     }
 
+    const cleaned = cleanPdfExtractedText(fullText.trim());
+
     return {
-      text: fullText.trim(),
+      text: cleaned,
       pageCount: doc.numPages,
       needsPassword: false,
     };
