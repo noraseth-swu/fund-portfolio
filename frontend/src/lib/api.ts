@@ -284,6 +284,67 @@ export async function testEmailConnection(payload?: {
   return res.json();
 }
 
+export interface EmailSyncProgress {
+  is_running: boolean;
+  completed?: boolean;
+  cancelled?: boolean;
+  user_id?: string;
+  broker?: string;
+  broker_index?: number;
+  total_brokers?: number;
+  email_index?: number;
+  total_emails?: number;
+  current_subject?: string;
+  current_attachment?: string;
+  emails_scanned?: number;
+  attachments_found?: number;
+  transactions_inserted?: number;
+  transactions_skipped?: number;
+  tokens_used?: {
+    prompt_tokens: number;
+    candidates_tokens: number;
+    total_tokens: number;
+  };
+  status_text?: string;
+  recent_logs?: string[];
+  log_tail?: string[];
+  result?: EmailSyncResult;
+  error?: string;
+}
+
+export async function startEmailSync(): Promise<{ started: boolean; pid?: number; already_running?: boolean; message?: string }> {
+  const res = await authFetch(`${API_BASE}/email/sync/start`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to start email sync');
+  }
+  return res.json();
+}
+
+export async function getEmailSyncStatus(): Promise<EmailSyncProgress> {
+  const res = await authFetch(`${API_BASE}/email/sync/status`, {
+    method: 'GET',
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to get email sync status');
+  }
+  return res.json();
+}
+
+export async function cancelEmailSync(): Promise<{ cancelled: boolean; message?: string }> {
+  const res = await authFetch(`${API_BASE}/email/sync/cancel`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to cancel email sync');
+  }
+  return res.json();
+}
+
 export async function syncEmailStatements(): Promise<EmailSyncResult> {
   const res = await authFetch(`${API_BASE}/email/sync`, {
     method: 'POST',

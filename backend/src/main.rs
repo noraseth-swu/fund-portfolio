@@ -83,6 +83,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         pool,
         api_key,
         gemini_api_key,
+        email_sync_pid: Arc::new(tokio::sync::Mutex::new(None)),
     });
     let app = create_router(app_state);
 

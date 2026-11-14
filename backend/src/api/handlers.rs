@@ -711,6 +711,231 @@ pub async fn test_email_connection(
     }
 }
 
+async fn is_pid_alive(pid: u32) -> bool {
+    #[cfg(windows)]
+    {
+        let out = tokio::process::Command::new("tasklist")
+            .args(["/FI", &format!("PID eq {pid}"), "/NH"])
+            .output()
+            .await;
+        if let Ok(o) = out {
+            let s = String::from_utf8_lossy(&o.stdout);
+            return s.contains(&pid.to_string()) && !s.contains("No tasks");
+        }
+        false
+    }
+    #[cfg(not(windows))]
+    {
+        let out = tokio::process::Command::new("kill")
+            .args(["-0", &pid.to_string()])
+            .output()
+            .await;
+        if let Ok(o) = out {
+            return o.status.success();
+        }
+        false
+    }
+}
+
+/// POST /api/email/sync/start
+/// สั่งเริ่มการสแกนอีเมลในโหมด Background Process (Async) พร้อมบันทึก PID
+pub async fn start_email_sync(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut pid_guard = state.email_sync_pid.lock().await;
+
+    if let Some(pid) = *pid_guard {
+        if is_pid_alive(pid).await {
+            return Ok(Json(serde_json::json!({
+                "already_running": true,
+                "message": "การสแกนกำลังทำงานอยู่แล้ว",
+                "pid": pid
+            })));
+        } else {
+            *pid_guard = None;
+        }
+    }
+
+    let settings = Repository::get_user_settings(&state.pool, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let gmail = settings
+        .gmail_account
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "ยังไม่ได้ตั้งค่า Gmail Account ใน Settings".to_string()))?;
+    let app_pwd = settings
+        .gmail_app_password
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "ยังไม่ได้ตั้งค่า Gmail App Password ใน Settings".to_string()))?;
+
+    let dob_day = settings.dob_day.unwrap_or_else(|| "01".to_string());
+    let dob_month = settings.dob_month.unwrap_or_else(|| "01".to_string());
+    let dob_year_ce = settings.dob_year_ce.unwrap_or_else(|| "1980".to_string());
+    let dob_year_be = settings.dob_year_be.unwrap_or_else(|| "2523".to_string());
+    let national_id_last5 = settings.national_id_last5.unwrap_or_default();
+
+    let initial_progress = serde_json::json!({
+        "is_running": true,
+        "completed": false,
+        "cancelled": false,
+        "user_id": auth.user_id,
+        "broker": "STARTING",
+        "broker_index": 0,
+        "total_brokers": 5,
+        "email_index": 0,
+        "total_emails": 0,
+        "current_subject": "",
+        "current_attachment": "",
+        "emails_scanned": 0,
+        "attachments_found": 0,
+        "transactions_inserted": 0,
+        "transactions_skipped": 0,
+        "tokens_used": { "prompt_tokens": 0, "candidates_tokens": 0, "total_tokens": 0 },
+        "status_text": "กำลังเริ่มต้นระบบและเชื่อมต่อ Gmail...",
+        "started_at": chrono::Utc::now().to_rfc3339(),
+        "recent_logs": ["กำลังเริ่มต้นกระบวนการสแกนอีเมล..."]
+    });
+    let _ = tokio::fs::write("sync_progress.json", initial_progress.to_string()).await;
+
+    let child = tokio::process::Command::new("python")
+        .args([
+            "scripts/email_harvester.py",
+            "--action",
+            "sync",
+            "--user-id",
+            &auth.user_id,
+            "--gmail",
+            &gmail,
+            "--app-password",
+            &app_pwd,
+            "--dob-day",
+            &dob_day,
+            "--dob-month",
+            &dob_month,
+            "--dob-year-ce",
+            &dob_year_ce,
+            "--dob-year-be",
+            &dob_year_be,
+            "--national-id-last5",
+            &national_id_last5,
+            "--db-path",
+            "portfolio.db",
+            "--gemini-api-key",
+            &state.gemini_api_key,
+            "--max-emails",
+            "0",
+        ])
+        .spawn()
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to spawn harvester: {e}")))?;
+
+    let pid = child.id().unwrap_or(0);
+    *pid_guard = Some(pid);
+
+    Ok(Json(serde_json::json!({
+        "started": true,
+        "pid": pid,
+        "message": "เริ่มการสแกนอีเมลเรียบร้อยแล้ว"
+    })))
+}
+
+/// GET /api/email/sync/status
+/// ตรวจสอบสถานะ ความคืบหน้า และ log ล่าสุดของการสแกนอีเมล
+pub async fn get_email_sync_status(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut pid_guard = state.email_sync_pid.lock().await;
+    let mut is_running = false;
+    if let Some(pid) = *pid_guard {
+        if is_pid_alive(pid).await {
+            is_running = true;
+        } else {
+            *pid_guard = None;
+        }
+    }
+
+    let mut progress_val = if let Ok(content) = tokio::fs::read_to_string("sync_progress.json").await {
+        serde_json::from_str::<serde_json::Value>(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({
+            "is_running": false,
+            "completed": false,
+            "status_text": "ยังไม่มีการสแกน"
+        })
+    };
+
+    if let Some(obj) = progress_val.as_object_mut() {
+        if !is_running && obj.get("is_running").and_then(|v| v.as_bool()).unwrap_or(false) {
+            obj.insert("is_running".to_string(), serde_json::json!(false));
+            if !obj.contains_key("completed") || !obj.get("completed").and_then(|v| v.as_bool()).unwrap_or(false) {
+                obj.insert("completed".to_string(), serde_json::json!(true));
+            }
+        } else if is_running {
+            obj.insert("is_running".to_string(), serde_json::json!(true));
+        }
+
+        if let Ok(log_content) = tokio::fs::read_to_string("email_sync.log").await {
+            let lines: Vec<&str> = log_content.lines().collect();
+            let tail_lines: Vec<String> = lines.into_iter().rev().take(15).rev().map(|s| s.to_string()).collect();
+            if !tail_lines.is_empty() {
+                obj.insert("log_tail".to_string(), serde_json::json!(tail_lines));
+            }
+        }
+    }
+
+    Ok(Json(progress_val))
+}
+
+/// POST /api/email/sync/cancel
+/// สั่งยกเลิก (Force Kill) กระบวนการสแกนอีเมลที่กำลังทำงานอยู่
+pub async fn cancel_email_sync(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut pid_guard = state.email_sync_pid.lock().await;
+
+    if let Some(pid) = *pid_guard {
+        tracing::warn!("[!] Cancelling email sync process with PID {}", pid);
+        #[cfg(windows)]
+        {
+            let _ = tokio::process::Command::new("taskkill")
+                .args(["/F", "/T", "/PID", &pid.to_string()])
+                .output()
+                .await;
+        }
+        #[cfg(not(windows))]
+        {
+            let _ = tokio::process::Command::new("kill")
+                .args(["-9", &pid.to_string()])
+                .output()
+                .await;
+        }
+        *pid_guard = None;
+    }
+
+    let mut progress_val = if let Ok(content) = tokio::fs::read_to_string("sync_progress.json").await {
+        serde_json::from_str::<serde_json::Value>(&content).unwrap_or(serde_json::json!({}))
+    } else {
+        serde_json::json!({})
+    };
+
+    if let Some(obj) = progress_val.as_object_mut() {
+        obj.insert("is_running".to_string(), serde_json::json!(false));
+        obj.insert("completed".to_string(), serde_json::json!(false));
+        obj.insert("cancelled".to_string(), serde_json::json!(true));
+        obj.insert("status_text".to_string(), serde_json::json!("การสแกนถูกยกเลิกโดยผู้ใช้งาน"));
+        if let Some(logs) = obj.get_mut("recent_logs").and_then(|v| v.as_array_mut()) {
+            logs.push(serde_json::json!("🛑 การสแกนอีเมลถูกยกเลิกโดยผู้ใช้"));
+        }
+    }
+    let _ = tokio::fs::write("sync_progress.json", progress_val.to_string()).await;
+
+    Ok(Json(serde_json::json!({
+        "cancelled": true,
+        "message": "ยกเลิกการสแกนอีเมลเรียบร้อยแล้ว"
+    })))
+}
+
 /// POST /api/email/sync
 pub async fn sync_email_statements(
     auth: AuthUser,

@@ -16,6 +16,7 @@ pub struct AppState {
     pub pool: DbPool,
     pub api_key: String,
     pub gemini_api_key: String,
+    pub email_sync_pid: Arc<tokio::sync::Mutex<Option<u32>>>,
 }
 
 pub fn create_router(state: Arc<AppState>) -> Router {
@@ -64,6 +65,9 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(handlers::test_email_connection),
         )
         .route("/api/email/sync", post(handlers::sync_email_statements))
+        .route("/api/email/sync/start", post(handlers::start_email_sync))
+        .route("/api/email/sync/status", get(handlers::get_email_sync_status))
+        .route("/api/email/sync/cancel", post(handlers::cancel_email_sync))
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);

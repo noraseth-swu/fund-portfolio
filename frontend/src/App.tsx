@@ -32,7 +32,7 @@ import {
   Calendar,
   X,
 } from 'lucide-react';
-import { getPortfolio, triggerNavSync, setTokenGetter, type PortfolioSummary } from './lib/api';
+import { getPortfolio, triggerNavSync, setTokenGetter, getEmailSyncStatus, type PortfolioSummary, type EmailSyncProgress } from './lib/api';
 import { MetricCard } from './components/MetricCard';
 import { PlatformBadge } from './components/PlatformBadge';
 import { AllocationChart } from './components/AllocationChart';
@@ -51,6 +51,9 @@ const CsvImportModal = lazy(() =>
 );
 const SettingsModal = lazy(() =>
   import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
+);
+const EmailSyncModal = lazy(() =>
+  import('./components/EmailSyncModal').then((m) => ({ default: m.EmailSyncModal }))
 );
 
 const DashboardSkeleton: React.FC = () => (
@@ -96,6 +99,29 @@ export const App: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
+  const [isSyncTrackerOpen, setIsSyncTrackerOpen] = useState(false);
+  const [syncProgress, setSyncProgress] = useState<EmailSyncProgress | null>(null);
+
+  // Background monitor for running email harvester
+  useEffect(() => {
+    let active = true;
+    const checkSync = async () => {
+      try {
+        const s = await getEmailSyncStatus();
+        if (active) {
+          setSyncProgress(s);
+        }
+      } catch {
+        // ignore
+      }
+    };
+    checkSync();
+    const interval = setInterval(checkSync, 4000);
+    return () => {
+      active = false;
+      clearInterval(interval);
+    };
+  }, []);
 
   const loadData = async () => {
     try {
@@ -446,6 +472,21 @@ export const App: React.FC = () => {
               <Plus className="w-3.5 h-3.5 text-white" />
               <span className="hidden md:inline text-white">{t('addTransaction')}</span>
             </button>
+
+            {/* Live Email Harvester Activity Pill (Visible whenever sync is actively running) */}
+            {syncProgress?.is_running && (
+              <button
+                onClick={() => setIsSyncTrackerOpen(true)}
+                className="px-2.5 py-1.5 rounded-xl bg-indigo-500/10 dark:bg-indigo-950/60 border border-indigo-500/40 text-indigo-600 dark:text-indigo-400 text-xs font-semibold flex items-center gap-1.5 cursor-pointer hover:bg-indigo-500/20 transition shadow-xs animate-pulse"
+                title="คลิกเพื่อดูความคืบหน้าการสแกน หรือกดยกเลิก"
+              >
+                <span className="w-2 h-2 rounded-full bg-indigo-500 animate-ping shrink-0" />
+                <span className="hidden sm:inline">
+                  {locale === 'th' ? 'สแกนเมลอยู่' : 'Syncing'} ({syncProgress.broker || '...'})
+                </span>
+                <span className="sm:hidden text-[10px]">Syncing</span>
+              </button>
+            )}
 
             {/* Divider */}
             <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 mx-0.5 sm:mx-1 hidden sm:block" />
@@ -942,6 +983,13 @@ export const App: React.FC = () => {
             isOpen={isSettingsModalOpen}
             onClose={() => setIsSettingsModalOpen(false)}
             onSyncComplete={loadData}
+          />
+        )}
+        {isSyncTrackerOpen && (
+          <EmailSyncModal
+            isOpen={isSyncTrackerOpen}
+            onClose={() => setIsSyncTrackerOpen(false)}
+            onComplete={loadData}
           />
         )}
       </Suspense>

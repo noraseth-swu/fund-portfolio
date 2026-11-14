@@ -16,10 +16,11 @@ import {
   getUserSettings,
   updateUserSettings,
   testEmailConnection,
-  syncEmailStatements,
+  startEmailSync,
   type UserSettings,
   type EmailSyncResult,
 } from '../lib/api';
+import { EmailSyncModal } from './EmailSyncModal';
 import { useI18n } from '../lib/i18n';
 
 interface SettingsModalProps {
@@ -68,6 +69,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [testResult, setTestResult] = useState<{ success: boolean; message: string } | null>(null);
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<EmailSyncResult | null>(null);
+  const [isSyncTrackerOpen, setIsSyncTrackerOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
 
@@ -171,13 +173,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     try {
       // Auto save latest values before syncing
       await updateUserSettings(settings);
-      const res = await syncEmailStatements();
-      setSyncResult(res);
-      if (onSyncComplete) {
-        onSyncComplete();
-      }
+      await startEmailSync();
+      setIsSyncTrackerOpen(true);
     } catch (e: any) {
-      setStatusMessage({ type: 'error', text: e.message || 'เกิดข้อผิดพลาดในการกวาดอีเมล' });
+      setStatusMessage({ type: 'error', text: e.message || 'เกิดข้อผิดพลาดในการเริ่มสแกนอีเมล' });
     } finally {
       setSyncing(false);
     }
@@ -540,6 +539,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           </div>
         </div>
       </div>
+
+      {/* Real-time Email Sync Progress Tracker Popup with Cancel Button */}
+      <EmailSyncModal
+        isOpen={isSyncTrackerOpen}
+        onClose={() => setIsSyncTrackerOpen(false)}
+        onComplete={() => {
+          if (onSyncComplete) onSyncComplete();
+        }}
+      />
     </div>
   );
 };

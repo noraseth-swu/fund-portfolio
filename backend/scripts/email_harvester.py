@@ -553,9 +553,74 @@ def match_fund_in_db(conn, fund_code):
     
     return clean_code, clean_code
 
+PROGRESS_FILE = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "sync_progress.json")
+
+def write_sync_progress(state):
+    try:
+        tmp = PROGRESS_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(state, f, ensure_ascii=False, indent=2)
+        if os.path.exists(tmp):
+            if os.path.exists(PROGRESS_FILE):
+                os.remove(PROGRESS_FILE)
+            os.rename(tmp, PROGRESS_FILE)
+    except Exception as e:
+        logger.debug("Failed to write sync_progress: %s", e)
+
 def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5, db_path, gemini_api_key=None, max_emails=0):
     passwords = generate_bank_passwords(dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5)
     
+    senders = [
+        ("TTB", "estatement@eservice.ttbbank.com"),
+        ("DIME", "no-reply@dime.co.th"),
+        ("SCB", "Registrar2@email.scb.co.th"),
+        ("KBANK", "ka.CyberInvest@kasikornasset.com"),
+        ("KBANK_PVD", "KA.Pvdcallcenter@kasikornasset.com"),
+    ]
+
+    progress_state = {
+        "is_running": True,
+        "completed": False,
+        "cancelled": False,
+        "user_id": user_id,
+        "broker": "STARTING",
+        "broker_index": 0,
+        "total_brokers": len(senders),
+        "email_index": 0,
+        "total_emails": 0,
+        "current_subject": "",
+        "current_attachment": "",
+        "emails_scanned": 0,
+        "attachments_found": 0,
+        "transactions_inserted": 0,
+        "transactions_skipped": 0,
+        "tokens_used": {"prompt_tokens": 0, "candidates_tokens": 0, "total_tokens": 0},
+        "status_text": "กำลังเชื่อมต่อกับ Gmail และตรวจสอบบัญชี...",
+        "started_at": datetime.now().isoformat(),
+        "updated_at": datetime.now().isoformat(),
+        "recent_logs": []
+    }
+    write_sync_progress(progress_state)
+
+    def update_status(text, log_msg=None):
+        progress_state["status_text"] = text
+        progress_state["updated_at"] = datetime.now().isoformat()
+        progress_state["emails_scanned"] = total_emails_scanned
+        progress_state["attachments_found"] = total_attachments_found
+        progress_state["transactions_inserted"] = inserted_count
+        progress_state["transactions_skipped"] = skipped_count
+        progress_state["tokens_used"] = {
+            "prompt_tokens": total_prompt_tokens,
+            "candidates_tokens": total_candidates_tokens,
+            "total_tokens": total_tokens
+        }
+        if log_msg:
+            ts = datetime.now().strftime("%H:%M:%S")
+            progress_state["recent_logs"].append(f"[{ts}] {log_msg}")
+            if len(progress_state["recent_logs"]) > 25:
+                progress_state["recent_logs"] = progress_state["recent_logs"][-25:]
+        write_sync_progress(progress_state)
+
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
 
@@ -604,14 +669,6 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
     mail.login(gmail_account, app_password)
     mail.select("INBOX")
     
-    senders = [
-        ("TTB", "estatement@eservice.ttbbank.com"),
-        ("DIME", "no-reply@dime.co.th"),
-        ("SCB", "Registrar2@email.scb.co.th"),
-        ("KBANK", "ka.CyberInvest@kasikornasset.com"),
-        ("KBANK_PVD", "KA.Pvdcallcenter@kasikornasset.com"),
-    ]
-    
     total_emails_scanned = 0
     total_attachments_found = 0
     total_txs_extracted = 0
@@ -623,15 +680,22 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
     details = []
     
     logger.info("Starting Gmail harvest for user '%s'...", user_id)
+    update_status("เริ่มการสแกนอีเมล...", f"เข้าสู่ระบบ Gmail ({gmail_account}) สำเร็จ")
 
-    for broker_tag, sender_email in senders:
+    for b_idx, (broker_tag, sender_email) in enumerate(senders, 1):
+        progress_state["broker"] = broker_tag
+        progress_state["broker_index"] = b_idx
+        update_status(f"กำลังค้นหาอีเมลของ {broker_tag}...", f"[{broker_tag}] กำลังค้นหาอีเมลจาก {sender_email}...")
         logger.info("Searching for %s emails from %s...", broker_tag, sender_email)
         status, data = mail.search(None, f'(FROM "{sender_email}")')
         if status != "OK" or not data[0]:
             logger.info("No messages found for %s.", broker_tag)
+            update_status(f"ไม่พบอีเมลของ {broker_tag}", f"[{broker_tag}] ไม่พบอีเมลใหม่ในกล่องข้อความ")
             continue
         
         msg_ids = data[0].split()
+        progress_state["total_emails"] = len(msg_ids)
+        update_status(f"[{broker_tag}] พบ {len(msg_ids)} อีเมล", f"[{broker_tag}] พบ {len(msg_ids)} อีเมล กำลังเริ่มสแกน...")
 
         # Dedicated Handler for KBANK_PVD (Approach 1: Latest Position Snapshot)
         if broker_tag == "KBANK_PVD":
@@ -763,6 +827,9 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     continue
 
             logger.info("[%s] [%d/%d] Processing email: '%s'...", broker_tag, idx, len(target_ids), subject[:60])
+            progress_state["email_index"] = idx
+            progress_state["current_subject"] = subject
+            update_status(f"[{broker_tag}] [{idx}/{len(target_ids)}] {subject[:45]}", f"[{broker_tag}] [{idx}/{len(target_ids)}] {subject[:50]}")
             email_tx_count = 0
             email_had_error = False
             
@@ -981,7 +1048,7 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
     logger.info("🪙 Tokens used: %s prompt + %s candidates = %s total tokens", f"{total_prompt_tokens:,}", f"{total_candidates_tokens:,}", f"{total_tokens:,}")
     logger.info("=" * 60)
     
-    return {
+    res = {
         "success": True,
         "emails_scanned": total_emails_scanned,
         "attachments_found": total_attachments_found,
@@ -995,6 +1062,14 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
         },
         "details": details[:20]
     }
+    progress_state["is_running"] = False
+    progress_state["completed"] = True
+    progress_state["broker"] = "COMPLETED"
+    progress_state["status_text"] = "การสแกนและนำเข้าข้อมูลเสร็จสิ้นเรียบร้อยแล้ว"
+    progress_state["finished_at"] = datetime.now().isoformat()
+    progress_state["result"] = res
+    update_status("การสแกนและนำเข้าข้อมูลเสร็จสิ้นเรียบร้อยแล้ว", f"🎉 สำเร็จ! สแกน {total_emails_scanned} อีเมล, นำเข้า {inserted_count} รายการ")
+    return res
 
 def main():
     parser = argparse.ArgumentParser(description="Gmail Mutual Fund Harvester")
