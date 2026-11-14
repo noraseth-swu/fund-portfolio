@@ -28,27 +28,45 @@ impl SyncService {
         let mut client = SecClient::new(api_key.to_string());
         let mut updated_count = 0;
 
-        for proj_id in &held_ids {
-            match client.get_fund_nav_history(proj_id).await {
+        for held_id in &held_ids {
+            // ค้นหา SEC proj_id จากฐานข้อมูลกองทุน (ถ้า held_id เป็นชื่อย่อหรือชื่อเต็ม)
+            let sec_proj_id = sqlx::query_scalar::<_, String>(
+                r#"
+                SELECT proj_id FROM funds 
+                WHERE proj_id = ?1 OR LOWER(proj_abbr_name) = LOWER(?1) OR LOWER(proj_name_en) = LOWER(?1) OR LOWER(proj_name_th) = LOWER(?1)
+                LIMIT 1
+                "#,
+            )
+            .bind(held_id)
+            .fetch_optional(pool)
+            .await
+            .unwrap_or(None)
+            .unwrap_or_else(|| held_id.clone());
+
+            match client.get_fund_nav_history(&sec_proj_id).await {
                 Ok(items) if !items.is_empty() => {
-                    Repository::upsert_nav_history(pool, proj_id, &items).await?;
+                    Repository::upsert_nav_history(pool, &sec_proj_id, &items).await?;
+                    if sec_proj_id != *held_id {
+                        let _ = Repository::upsert_nav_history(pool, held_id, &items).await;
+                    }
                     updated_count += 1;
                     println!(
-                        "[Background Sync] Updated NAV for fund {}: {} records",
-                        proj_id,
+                        "[Background Sync] Updated NAV for fund {} (SEC: {}): {} records",
+                        held_id,
+                        sec_proj_id,
                         items.len()
                     );
                 }
                 Ok(_) => {
                     println!(
-                        "[Background Sync] No new NAV records returned for {}",
-                        proj_id
+                        "[Background Sync] No new NAV records returned for {} (SEC: {})",
+                        held_id, sec_proj_id
                     );
                 }
                 Err(e) => {
                     eprintln!(
-                        "[Background Sync Error] Failed to fetch NAV for {}: {}",
-                        proj_id, e
+                        "[Background Sync Error] Failed to fetch NAV for {} (SEC: {}): {}",
+                        held_id, sec_proj_id, e
                     );
                 }
             }

@@ -28,6 +28,7 @@ impl CalculationEngine {
             total_cost: Decimal,
             realized_pl: Decimal,
             dividend: Decimal,
+            last_unit_price: Decimal,
         }
 
         let mut trackers: HashMap<(String, String), PositionTracker> = HashMap::new();
@@ -53,7 +54,12 @@ impl CalculationEngine {
                 total_cost: Decimal::ZERO,
                 realized_pl: Decimal::ZERO,
                 dividend: Decimal::ZERO,
+                last_unit_price: Decimal::ZERO,
             });
+
+            if tx.unit_price > Decimal::ZERO {
+                tracker.last_unit_price = tx.unit_price;
+            }
 
             match tx.trans_type {
                 TransactionType::Buy => {
@@ -97,10 +103,19 @@ impl CalculationEngine {
         let mut platform_groups: HashMap<String, (Decimal, Decimal, Decimal)> = HashMap::new(); // (cost, market_val, realized)
 
         for (_, tracker) in trackers {
-            let current_nav = nav_map
+            let mut current_nav = nav_map
                 .get(&tracker.proj_id)
                 .map(|(_, _, nav)| *nav)
                 .unwrap_or(Decimal::ZERO);
+
+            // Fallback: หากยังไม่มีข้อมูล NAV ล่าสุดจาก SEC ให้ใช้ราคาต่อหน่วยล่าสุดจากธุรกรรม หรือต้นทุนเฉลี่ย
+            if current_nav <= Decimal::ZERO {
+                if tracker.last_unit_price > Decimal::ZERO {
+                    current_nav = tracker.last_unit_price;
+                } else if tracker.units > Decimal::ZERO && tracker.total_cost > Decimal::ZERO {
+                    current_nav = (tracker.total_cost / tracker.units).round_dp(4);
+                }
+            }
 
             let avg_cost = if tracker.units > Decimal::ZERO {
                 (tracker.total_cost / tracker.units).round_dp(4)
@@ -308,5 +323,32 @@ mod tests {
         assert_eq!(summary.total_cost, dec!(500.0)); // เหลือต้นทุน 50 หน่วย @ 10 = 500
         assert_eq!(summary.market_value, dec!(650.0)); // 50 หน่วย * 13 = 650
         assert_eq!(summary.total_unrealized_pl, dec!(150.0)); // 650 - 500 = 150
+    }
+
+    #[test]
+    fn test_fallback_to_transaction_unit_price_when_nav_zero() {
+        let tx = Transaction {
+            id: "tx-fallback".to_string(),
+            proj_id: "EASTSPRING-US-TECH".to_string(),
+            fund_abbr: Some("EASTSPRING-US-TECH".to_string()),
+            platform: super::super::models::Platform::Ttb,
+            trans_type: TransactionType::Buy,
+            trans_date: "2023-12-28".to_string(),
+            units: dec!(46.0992),
+            unit_price: dec!(13.5577),
+            total_amount: dec!(625.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        // nav_map ว่างเปล่า หรือให้ค่า 0
+        let nav_map = HashMap::new();
+        let summary = CalculationEngine::calculate_portfolio(vec![tx], &nav_map);
+
+        assert_eq!(summary.holdings[0].current_nav, dec!(13.5577));
+        assert_eq!(summary.holdings[0].market_value, dec!(625.0));
+        assert_eq!(summary.holdings[0].unrealized_pl, dec!(0.0));
+        assert_eq!(summary.total_cost, dec!(625.0));
+        assert_eq!(summary.market_value, dec!(625.0));
     }
 }

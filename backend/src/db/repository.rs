@@ -173,20 +173,25 @@ impl Repository {
             r#"
             SELECT 
                 t.proj_id,
-                COALESCE(f.proj_abbr_name, t.fund_abbr, t.proj_id) AS proj_abbr_name,
-                f.proj_name_th,
-                COALESCE(h.latest_nav, f.last_nav, '0') AS last_nav
-            FROM (SELECT DISTINCT proj_id, fund_abbr FROM transactions WHERE user_id = ?1) t
-            LEFT JOIN funds f ON f.proj_id = t.proj_id
-            LEFT JOIN (
-                SELECT proj_id, nav AS latest_nav
-                FROM fund_nav_history
-                WHERE (proj_id, nav_date) IN (
-                    SELECT proj_id, MAX(nav_date)
-                    FROM fund_nav_history
-                    GROUP BY proj_id
-                )
-            ) h ON h.proj_id = t.proj_id
+                COALESCE(
+                    (SELECT proj_abbr_name FROM funds WHERE proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id) LIMIT 1),
+                    t.fund_abbr,
+                    t.proj_id
+                ) AS proj_abbr_name,
+                (SELECT proj_name_th FROM funds WHERE proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id) LIMIT 1) AS proj_name_th,
+                COALESCE(
+                    (SELECT nav FROM fund_nav_history WHERE proj_id = t.proj_id ORDER BY nav_date DESC LIMIT 1),
+                    (SELECT last_nav FROM funds WHERE (proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id)) AND last_nav IS NOT NULL AND last_nav != '0' LIMIT 1),
+                    (
+                        SELECT CAST(unit_price AS TEXT)
+                        FROM transactions
+                        WHERE user_id = ?1 AND proj_id = t.proj_id AND unit_price > 0
+                        ORDER BY trans_date DESC, rowid DESC
+                        LIMIT 1
+                    ),
+                    '0'
+                ) AS last_nav
+            FROM (SELECT proj_id, MAX(fund_abbr) AS fund_abbr FROM transactions WHERE user_id = ?1 GROUP BY proj_id) t
             "#,
         )
         .bind(user_id)
