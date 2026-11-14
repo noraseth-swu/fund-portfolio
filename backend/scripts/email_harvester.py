@@ -14,6 +14,8 @@ import os
 import io
 import re
 import json
+import time
+import uuid
 import hashlib
 import imaplib
 import email
@@ -883,7 +885,6 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                         idem_key = compute_idempotency_key(
                             user_id, tx["platform"], proj_id, tx["trans_date"], tx["trans_type"], tx["units"], tx["total_amount"], tx["note"]
                         )
-                        import uuid
                         tx_id = f"tx_email_{uuid.uuid4().hex[:12]}"
                         try:
                             c.execute("""
@@ -1011,7 +1012,6 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                                     if shares > 0 and price_usd > 0:
                                         exchange_rate = round(total_thb / (shares * price_usd), 2)
                                     
-                                    import uuid
                                     stk_id = f"tx_stk_{uuid.uuid4().hex[:12]}"
                                     idem_key = compute_idempotency_key(user_id, "DIME_STOCK", ticker, t_date, t_type, shares, total_thb, note)
                                     c.execute("""
@@ -1070,7 +1070,6 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                                 pdf_tx_count += 1
                                 
                                 idem_key = compute_idempotency_key(user_id, platform_code, proj_id, t_date, t_type, units, total_amount, note)
-                                import uuid
                                 tx_id = f"tx_pdf_{uuid.uuid4().hex[:12]}"
                                 c.execute("""
                                     INSERT INTO transactions (id, user_id, idempotency_key, proj_id, fund_abbr, platform, trans_type, trans_date, units, unit_price, total_amount, fee, note)
