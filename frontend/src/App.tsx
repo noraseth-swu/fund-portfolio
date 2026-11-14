@@ -72,24 +72,22 @@ export const App: React.FC = () => {
     setSyncMessage(null);
     try {
       const res = await triggerNavSync();
-      setSyncMessage(`อัปเดตราคา NAV เรียบร้อย (${res.updated_funds_count} กองทุน)`);
+      setSyncMessage(t('syncSuccess', { count: res.updated_funds_count }));
       await loadData();
       setTimeout(() => setSyncMessage(null), 4000);
     } catch (e) {
       console.error(e);
-      setSyncMessage('การซิงค์ล้มเหลว กรุณาลองใหม่อีกครั้ง');
+      setSyncMessage(t('syncFailed'));
     } finally {
       setSyncing(false);
     }
   };
 
-  const activePlatforms = portfolio?.platforms && Object.keys(portfolio.platforms).length > 0
-    ? Object.keys(portfolio.platforms)
-    : ['KBANK', 'TTB', 'DIME', 'SCB'];
+  const activePlatforms = portfolio?.platforms ? Object.keys(portfolio.platforms) : [];
 
   const filteredHoldings = (portfolio?.holdings || []).filter((h) => {
     if (selectedPlatform === 'ALL') return true;
-    return h.platform.toUpperCase() === selectedPlatform;
+    return h.platform.toUpperCase() === selectedPlatform.toUpperCase();
   });
 
   const formatMoney = (val?: string) => {
@@ -112,7 +110,7 @@ export const App: React.FC = () => {
   if (!isLoaded) {
     return (
       <div className="min-h-screen bg-slate-950 flex items-center justify-center text-slate-400 text-sm">
-        กำลังโหลดระบบความปลอดภัย...
+        {t('loadingSecurity')}
       </div>
     );
   }
@@ -129,13 +127,10 @@ export const App: React.FC = () => {
             <Wallet className="w-7 h-7 text-white" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">
-            Fund Portfolio Manager
+            {t('appTitle')}
           </h1>
           <p className="text-slate-400 text-sm">
-            รวมพอร์ตลงทุนกองทุนรวม <span className="text-emerald-400">KBank</span>,{' '}
-            <span className="text-blue-400">ttb</span>,{' '}
-            <span className="text-teal-300">Dime!</span>, และ{' '}
-            <span className="text-purple-400">SCB</span>
+            {t('appSubtitle')}
           </p>
 
           <div className="flex items-center justify-center gap-4 mt-4 text-xs text-slate-400 font-medium">
@@ -170,16 +165,25 @@ export const App: React.FC = () => {
             </div>
             <div>
               <h1 className="font-bold text-base sm:text-lg tracking-tight text-white flex items-center gap-2">
-                Fund Portfolio
+                {t('appTitle')}
                 <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono border border-slate-700">
                   SEC API v2
                 </span>
               </h1>
               <p className="text-[11px] text-slate-400">
-                รวมพอร์ตลงทุน <span className="text-emerald-400">KBank</span> •{' '}
-                <span className="text-blue-400">ttb</span> •{' '}
-                <span className="text-teal-300">Dime!</span> •{' '}
-                <span className="text-purple-400">SCB</span>
+                {activePlatforms.length > 0 ? (
+                  <>
+                    <span>{t('activeBrokersPrefix')}</span>
+                    {activePlatforms.map((plat, idx) => (
+                      <span key={plat}>
+                        <span className="font-semibold text-slate-200">{plat}</span>
+                        {idx < activePlatforms.length - 1 && ' • '}
+                      </span>
+                    ))}
+                  </>
+                ) : (
+                  <span>{t('noPlatformData')}</span>
+                )}
               </p>
             </div>
           </div>
@@ -284,16 +288,16 @@ export const App: React.FC = () => {
       {/* Main Dashboard Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {loading ? (
-          <div className="py-20 text-center text-slate-500 text-sm">กำลังคำนวณและประมวลผลพอร์ตของคุณ...</div>
+          <div className="py-20 text-center text-slate-500 text-sm">{t('loadingPortfolio')}</div>
         ) : (
           <>
             {/* Greeting banner */}
             <div className="flex items-center justify-between">
               <div>
                 <h2 className="text-xl font-bold text-white">
-                  สวัสดี, {user?.firstName || user?.username || 'นักลงทุน'} 👋
+                  {t('greeting', { name: user?.firstName || user?.username || (locale === 'th' ? 'นักลงทุน' : 'Investor') })}
                 </h2>
-                <p className="text-xs text-slate-400">นี่คือภาพรวมพอร์ตการลงทุนของคุณทั้งหมดในปัจจุบัน</p>
+                <p className="text-xs text-slate-400">{t('greetingSubtitle')}</p>
               </div>
             </div>
 
@@ -340,53 +344,66 @@ export const App: React.FC = () => {
 
               {/* Platform Cards Breakdown */}
               <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
-                <h3 className="text-sm font-semibold text-slate-200 mb-4">{t('platformHeader')} Overview</h3>
-                <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
-                  {activePlatforms.map((plat) => {
-                    const p = portfolio?.platforms[plat];
-                    const upl = p?.unrealized_pl || '0';
-                    const uplPct = p?.unrealized_pl_pct || '0';
-                    const isPos = parseFloat(upl) >= 0;
+                <h3 className="text-sm font-semibold text-slate-200 mb-4">{t('platformOverview')}</h3>
+                {activePlatforms.length > 0 ? (
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
+                    {activePlatforms.map((plat) => {
+                      const p = portfolio?.platforms[plat];
+                      const upl = p?.unrealized_pl || '0';
+                      const uplPct = p?.unrealized_pl_pct || '0';
+                      const isPos = parseFloat(upl) >= 0;
 
-                    return (
-                      <div
-                        key={plat}
-                        onClick={() => setSelectedPlatform(selectedPlatform === plat ? 'ALL' : plat)}
-                        className={`p-4 rounded-xl border cursor-pointer transition ${
-                          selectedPlatform === plat
-                            ? 'border-indigo-500 bg-indigo-950/20'
-                            : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
-                        }`}
-                      >
-                        <div className="flex items-center justify-between mb-2">
-                          <PlatformBadge platform={plat} />
-                          <span className="text-xs font-mono text-slate-400">
-                            {p ? `${p.allocation_pct}%` : '0%'}
-                          </span>
-                        </div>
-                        <div className="flex justify-between items-end">
-                          <div>
-                            <div className="text-xs text-slate-400">{t('marketValHeader')}</div>
-                            <div className="text-base font-bold text-white font-mono">
-                              {p ? formatMoney(p.market_value) : '0.00'}{' '}
-                              <span className="text-[10px] text-slate-400">THB</span>
+                      return (
+                        <div
+                          key={plat}
+                          onClick={() => setSelectedPlatform(selectedPlatform === plat ? 'ALL' : plat)}
+                          className={`p-4 rounded-xl border cursor-pointer transition ${
+                            selectedPlatform === plat
+                              ? 'border-indigo-500 bg-indigo-950/20'
+                              : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
+                          }`}
+                        >
+                          <div className="flex items-center justify-between mb-2">
+                            <PlatformBadge platform={plat} />
+                            <span className="text-xs font-mono text-slate-400">
+                              {p ? `${p.allocation_pct}%` : '0%'}
+                            </span>
+                          </div>
+                          <div className="flex justify-between items-end">
+                            <div>
+                              <div className="text-xs text-slate-400">{t('marketValHeader')}</div>
+                              <div className="text-base font-bold text-white font-mono">
+                                {p ? formatMoney(p.market_value) : '0.00'}{' '}
+                                <span className="text-[10px] text-slate-400">THB</span>
+                              </div>
+                            </div>
+                            <div className="text-right">
+                              <div className="text-xs text-slate-400">{t('plHeader')}</div>
+                              <div
+                                className={`text-xs font-bold font-mono ${
+                                  isPos ? 'text-emerald-400' : 'text-rose-400'
+                                }`}
+                              >
+                                {p ? `${isPos ? '+' : ''}${formatMoney(upl)} (${uplPct}%)` : '-'}
+                              </div>
                             </div>
                           </div>
-                          <div className="text-right">
-                            <div className="text-xs text-slate-400">{t('plHeader')}</div>
-                            <div
-                              className={`text-xs font-bold font-mono ${
-                                isPos ? 'text-emerald-400' : 'text-rose-400'
-                              }`}
-                            >
-                              {p ? `${isPos ? '+' : ''}${formatMoney(upl)} (${uplPct}%)` : '-'}
-                            </div>
-                          </div>
                         </div>
-                      </div>
-                    );
-                  })}
-                </div>
+                      );
+                    })}
+                  </div>
+                ) : (
+                  <div className="p-8 text-center border border-dashed border-slate-800 rounded-xl my-auto">
+                    <p className="text-slate-400 text-sm mb-3">{t('noPlatformData')}</p>
+                    <button
+                      onClick={() => setIsAddModalOpen(true)}
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition cursor-pointer"
+                    >
+                      <Plus className="w-3.5 h-3.5" />
+                      <span>{t('addTransaction')}</span>
+                    </button>
+                  </div>
+                )}
               </div>
             </div>
 

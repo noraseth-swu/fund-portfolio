@@ -1,6 +1,7 @@
 import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import type { PlatformSummary } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 
 interface Props {
   platforms: Record<string, PlatformSummary>;
@@ -15,6 +16,7 @@ const PLATFORM_COLORS: Record<string, string> = {
 };
 
 export const AllocationChart: React.FC<Props> = ({ platforms }) => {
+  const { t } = useI18n();
   const data = Object.values(platforms)
     .filter((p) => parseFloat(p.market_value) > 0)
     .map((p) => ({
@@ -27,7 +29,7 @@ export const AllocationChart: React.FC<Props> = ({ platforms }) => {
   if (data.length === 0) {
     return (
       <div className="h-64 flex items-center justify-center text-slate-500 text-sm">
-        ยังไม่มีข้อมูลสัดส่วนการลงทุน
+        {t('noAllocationData')}
       </div>
     );
   }

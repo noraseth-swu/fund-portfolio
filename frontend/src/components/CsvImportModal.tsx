@@ -175,13 +175,13 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
       if (!fundCode) {
         isValid = false;
-        error = 'ไม่พบชื่อกองทุน';
+        error = t('fundNotFound');
       } else if (!units || isNaN(parseFloat(units)) || parseFloat(units) <= 0) {
         isValid = false;
-        error = 'จำนวนหน่วยไม่ถูกต้อง';
+        error = t('invalidUnits');
       } else if (!unitPrice || isNaN(parseFloat(unitPrice)) || parseFloat(unitPrice) <= 0) {
         isValid = false;
-        error = 'ราคา NAV ไม่ถูกต้อง';
+        error = t('invalidNav');
       }
 
       return {
@@ -220,7 +220,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
   const parseCsvText = (text: string) => {
     const lines = text.split(/\r?\n/).filter((line) => line.trim().length > 0);
     if (lines.length < 2) {
-      setErrorMessage('ไฟล์ไม่มีข้อมูลหรือมีเพียงบรรทัดหัวตาราง');
+      setErrorMessage(t('csvNoData'));
       return;
     }
 
@@ -265,7 +265,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
   // Process PDF file with Gemini AI
   const processPdfFile = async (buffer: ArrayBuffer, password?: string) => {
     setLoading(true);
-    setLoadingStatus('กำลังอ่านโครงสร้างเอกสาร PDF...');
+    setLoadingStatus(t('analyzingPdfStructure'));
     setErrorMessage(null);
 
     try {
@@ -275,7 +275,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
         setIsPasswordRequired(true);
         setPendingPdfBuffer(buffer.slice(0));
         if (password) {
-          setErrorMessage('รหัสผ่าน PDF ไม่ถูกต้อง กรุณาตรวจสอบแล้วลองใหม่อีกครั้ง');
+          setErrorMessage(t('pdfPasswordWrong'));
         }
         setLoading(false);
         return;
@@ -283,13 +283,13 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
       setIsPasswordRequired(false);
 
-      setLoadingStatus('🤖 Gemini AI กำลังวิเคราะห์เอกสารและสกัดรายการธุรกรรม...');
+      setLoadingStatus(t('aiAnalyzingStatement'));
 
       let response;
       if (parseResult.text && parseResult.text.length > 50) {
         response = await parseStatementAi({ text: parseResult.text });
       } else {
-        setLoadingStatus('🤖 Gemini Vision กำลังทำ OCR ตรวจสอบตารางภาพใบยืนยัน...');
+        setLoadingStatus(t('aiOcrAnalyzing'));
         const base64 = arrayBufferToBase64(buffer.slice(0));
         response = await parseStatementAi({ pdf_base64: base64 });
       }
@@ -299,7 +299,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
       }
 
       if (!response.transactions || response.transactions.length === 0) {
-        setErrorMessage('Gemini AI ไม่พบรายการซื้อขายกองทุนในเอกสารนี้ กรุณาตรวจสอบว่ามีข้อมูลรายการธุรกรรมครบถ้วนหรือไม่');
+        setErrorMessage(t('noTransactionsFoundAi'));
         return;
       }
 
@@ -317,7 +317,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
       validateAndSetRows(mapped);
     } catch (err: any) {
       console.error('PDF parsing error:', err);
-      setErrorMessage(err.message || 'เกิดข้อผิดพลาดในการวิเคราะห์ไฟล์ PDF ด้วย AI');
+      setErrorMessage(err.message || t('aiParseError'));
     } finally {
       setLoading(false);
       setLoadingStatus('');
@@ -354,7 +354,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
   const handleDirectTextSubmit = async () => {
     if (!pastedText.trim()) return;
     setLoading(true);
-    setLoadingStatus('🤖 Gemini AI กำลังวิเคราะห์ข้อความใบยืนยันรายการ...');
+    setLoadingStatus(t('aiAnalyzingPasted'));
     setErrorMessage(null);
 
     try {
@@ -364,11 +364,11 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
       }
 
       if (!response.transactions || response.transactions.length === 0) {
-        setErrorMessage('Gemini AI ไม่พบรายการซื้อขายกองทุนในข้อความที่วาง กรุณาตรวจสอบข้อความ');
+        setErrorMessage(t('noTransactionsFoundPasted'));
         return;
       }
 
-      setFileName('ข้อความที่คัดลอกมา');
+      setFileName(t('pasteSource'));
       const mapped = response.transactions.map((tx) => ({
         date: tx.trans_date,
         platform: tx.platform,
@@ -382,7 +382,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
       validateAndSetRows(mapped);
     } catch (err: any) {
-      setErrorMessage(err.message || 'เกิดข้อผิดพลาดในการวิเคราะห์ข้อความด้วย AI');
+      setErrorMessage(err.message || t('aiTextParseError'));
     } finally {
       setLoading(false);
       setLoadingStatus('');
@@ -404,13 +404,13 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
     let error: string | undefined;
     if (!r.fundCode.trim()) {
       isValid = false;
-      error = 'ไม่พบชื่อกองทุน';
+      error = t('fundNotFound');
     } else if (!r.units || isNaN(parseFloat(r.units)) || parseFloat(r.units) <= 0) {
       isValid = false;
-      error = 'จำนวนหน่วยไม่ถูกต้อง';
+      error = t('invalidUnits');
     } else if (!r.unitPrice || isNaN(parseFloat(r.unitPrice)) || parseFloat(r.unitPrice) <= 0) {
       isValid = false;
-      error = 'ราคา NAV ไม่ถูกต้อง';
+      error = t('invalidNav');
     }
     r.isValid = isValid;
     r.error = error;
@@ -421,12 +421,12 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
   const handleImportSubmit = async () => {
     const validRows = rows.filter((r) => r.isValid);
     if (validRows.length === 0) {
-      setErrorMessage('ไม่มีรายการที่ถูกต้องสำหรับนำเข้า');
+      setErrorMessage(t('noValidRows'));
       return;
     }
 
     setLoading(true);
-    setLoadingStatus('กำลังบันทึกรายการทั้งหมดลงฐานข้อมูล SQLite...');
+    setLoadingStatus(t('savingToDb'));
     try {
       const payloads = validRows.map((r) => ({
         proj_id: r.fundCode,
@@ -444,7 +444,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
       onSuccess();
       onClose();
     } catch (err: any) {
-      setErrorMessage(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      setErrorMessage(err.message || t('saveError'));
     } finally {
       setLoading(false);
       setLoadingStatus('');
@@ -486,7 +486,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
               <button
                 onClick={() => setActiveTab('pdf')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
                   activeTab === 'pdf'
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                     : 'text-slate-400 hover:text-slate-200'
@@ -498,7 +498,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
               <button
                 onClick={() => setActiveTab('paste')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
                   activeTab === 'paste'
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                     : 'text-slate-400 hover:text-slate-200'
@@ -510,7 +510,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
               <button
                 onClick={() => setActiveTab('csv')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
                   activeTab === 'csv'
                     ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
                     : 'text-slate-400 hover:text-slate-200'
@@ -545,7 +545,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             <form onSubmit={handlePasswordSubmit} className="flex items-center gap-2 mt-1">
               <input
                 type="password"
-                placeholder="กรอกรหัสผ่านเพื่อปลดล็อก PDF..."
+                placeholder={t('enterPasswordPlaceholder')}
                 value={pdfPassword}
                 onChange={(e) => setPdfPassword(e.target.value)}
                 autoFocus
@@ -661,19 +661,9 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
               <div className="flex items-center gap-2">
                 <span className="text-slate-400">{t('dataSource')}:</span>
                 <span className="font-semibold text-white font-mono bg-slate-800 px-2 py-0.5 rounded">
-                  {fileName || 'ไฟล์นำเข้า'}
+                  {fileName || t('importedFileDefault')}
                 </span>
               </div>
-
-              {/* Token Usage Badge */}
-              {tokenUsage && (
-                <div className="flex items-center gap-1.5 px-3 py-1 rounded-lg bg-indigo-950/80 border border-indigo-500/40 text-indigo-300 text-xs font-mono shadow-sm">
-                  <Sparkles className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
-                  <span>
-                    {t('geminiTokens')}: <strong className="text-white font-bold">{tokenUsage.total_tokens.toLocaleString()}</strong> (Prompt: {tokenUsage.prompt_tokens.toLocaleString()} / Output: {tokenUsage.candidates_tokens.toLocaleString()})
-                  </span>
-                </div>
-              )}
 
               <div className="flex items-center gap-3">
                 <span className="text-emerald-400 font-semibold flex items-center gap-1">
@@ -683,7 +673,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
                 {totalAmount > 0 && (
                   <span className="text-slate-300 font-semibold border-l border-slate-700 pl-3">
-                    {t('totalAmountSum')}: <span className="text-emerald-400 font-mono">{totalAmount.toLocaleString('th-TH', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> บาท
+                    {t('totalAmountSum')}: <span className="text-emerald-400 font-mono">{totalAmount.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span> {t('currencyBaht')}
                   </span>
                 )}
 
@@ -743,16 +733,12 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       />
                     </th>
 
-                    {/* Fund Code & Name - Resizable and generous width */}
-                    <th style={{ width: colWidths.fundCode }} className="py-2.5 px-3 relative bg-indigo-950/20 text-indigo-300">
-                      <div className="flex items-center justify-between">
-                        <span>{t('fundCodeName')}</span>
-                        <span className="text-[10px] text-indigo-400/80 font-normal">↔ ขยายได้</span>
-                      </div>
+                    {/* Fund Code & Name - Resizable column without static highlight */}
+                    <th style={{ width: colWidths.fundCode }} className="py-2.5 px-3 whitespace-nowrap relative">
+                      <span>{t('fundCodeName')}</span>
                       <div
                         onMouseDown={(e) => handleMouseDownResize('fundCode', e)}
-                        className="absolute right-0 top-0 bottom-0 w-3 cursor-col-resize bg-indigo-500/30 hover:bg-indigo-400 z-20"
-                        title="ลากเพื่อขยายคอลัมน์ชื่อกองทุน"
+                        className="absolute right-0 top-0 bottom-0 w-2.5 cursor-col-resize hover:bg-indigo-500/50 z-20"
                       />
                     </th>
 
@@ -866,16 +852,16 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                           onChange={(e) => handleCellChange(idx, 'type', e.target.value)}
                           className="w-full bg-slate-900 border border-slate-700 rounded px-2 py-1 text-[11px] text-white focus:outline-none focus:border-indigo-500"
                         >
-                          <option value="BUY">BUY (ซื้อ)</option>
-                          <option value="SELL">SELL (ขาย)</option>
-                          <option value="DIVIDEND">DIVIDEND (ปันผล)</option>
+                          <option value="BUY">{t('buy')}</option>
+                          <option value="SELL">{t('sell')}</option>
+                          <option value="DIVIDEND">{t('dividend')}</option>
                         </select>
                       </td>
 
                       {/* Total Amount (Units * NAV) */}
                       <td style={{ width: colWidths.amount }} className="py-2 px-2.5 text-right font-mono text-emerald-400 font-semibold whitespace-nowrap">
                         {!isNaN(parseFloat(row.units)) && !isNaN(parseFloat(row.unitPrice))
-                          ? (parseFloat(row.units) * parseFloat(row.unitPrice)).toLocaleString('th-TH', {
+                          ? (parseFloat(row.units) * parseFloat(row.unitPrice)).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })
@@ -887,7 +873,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                         <input
                           type="text"
                           value={row.unitPrice}
-                          title="NAV ณ วันที่ทำรายการมีผล"
+                          title={t('navOnEffective')}
                           placeholder="NAV..."
                           onChange={(e) => handleCellChange(idx, 'unitPrice', e.target.value)}
                           className={`w-full bg-slate-900/60 border rounded px-2 py-1 text-right focus:outline-none ${
@@ -927,7 +913,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                         <input
                           type="text"
                           value={row.note}
-                          placeholder="หมายเหตุ..."
+                          placeholder={`${t('noteText')}...`}
                           title={row.note}
                           onChange={(e) => handleCellChange(idx, 'note', e.target.value)}
                           className="w-full bg-slate-900/60 border border-slate-700/60 hover:border-slate-600 focus:border-indigo-500 rounded px-2.5 py-1 text-slate-300 text-[11px] focus:outline-none"
@@ -939,7 +925,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                         <button
                           onClick={() => handleDeleteRow(idx)}
                           className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-950/40 transition cursor-pointer"
-                          title="ลบแถวนี้"
+                          title={t('deleteRowTooltip')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>
@@ -951,20 +937,30 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             </div>
 
             {/* Bottom Modal Actions */}
-            <div className="flex items-center justify-between pt-2 border-t border-slate-800">
-              <button
-                type="button"
-                onClick={onClose}
-                className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer"
-              >
-                {t('btnCancel')}
-              </button>
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 pt-3 border-t border-slate-800">
+              <div className="flex items-center gap-3">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+                >
+                  {t('btnCancel')}
+                </button>
+                {tokenUsage && (
+                  <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 border-l border-slate-800 pl-3">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400/80 shrink-0" />
+                    <span>
+                      {t('geminiTokens')}: {tokenUsage.total_tokens.toLocaleString()} (Prompt: {tokenUsage.prompt_tokens.toLocaleString()} / Output: {tokenUsage.candidates_tokens.toLocaleString()})
+                    </span>
+                  </span>
+                )}
+              </div>
 
               <button
                 type="button"
                 onClick={handleImportSubmit}
                 disabled={loading || validCount === 0}
-                className="flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-900/30 cursor-pointer"
+                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-900/30 cursor-pointer"
               >
                 <Check className="w-4 h-4" />
                 <span>{t('btnConfirmImport', { n: validCount })}</span>

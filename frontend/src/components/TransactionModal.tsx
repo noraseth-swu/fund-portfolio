@@ -1,6 +1,7 @@
 import React, { useState, useEffect } from 'react';
 import { X, Search, Check, AlertCircle, RefreshCw } from 'lucide-react';
 import { searchFunds, createTransaction, getBrokers, type FundSearchResult, type BrokerItem } from '../lib/api';
+import { useI18n } from '../lib/i18n';
 
 interface Props {
   isOpen: boolean;
@@ -9,6 +10,7 @@ interface Props {
 }
 
 export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
+  const { t } = useI18n();
   const [platform, setPlatform] = useState('KBANK');
   const [transType, setTransType] = useState('BUY');
   const [transDate, setTransDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -72,17 +74,17 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
 
     const targetProjId = projId || searchQuery.trim();
     if (!targetProjId) {
-      setError('กรุณาเลือกหรือระบุชื่อกองทุน');
+      setError(t('selectFundRequired'));
       return;
     }
 
     if (!units || parseFloat(units) <= 0) {
-      setError('กรุณาระบุจำนวนหน่วยลงทุนให้ถูกต้อง');
+      setError(t('unitsRequired'));
       return;
     }
 
     if (!unitPrice || parseFloat(unitPrice) <= 0) {
-      setError('กรุณาระบุราคาต่อหน่วย (NAV) ให้ถูกต้อง');
+      setError(t('priceRequired'));
       return;
     }
 
@@ -103,7 +105,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
       onSuccess();
       onClose();
     } catch (err: any) {
-      setError(err.message || 'เกิดข้อผิดพลาดในการบันทึกข้อมูล');
+      setError(err.message || t('saveError'));
     } finally {
       setLoading(false);
     }
@@ -123,7 +125,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
           <X className="w-5 h-5" />
         </button>
 
-        <h2 className="text-xl font-bold text-white mb-4">บันทึกธุรกรรมการลงทุน</h2>
+        <h2 className="text-xl font-bold text-white mb-4">{t('recordTransaction')}</h2>
 
         {error && (
           <div className="mb-4 p-3 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2">
@@ -136,8 +138,8 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
           {/* แพลตฟอร์ม / โบรกเกอร์ (Master Data Dropdown + Quick Select) */}
           <div>
             <div className="flex items-center justify-between mb-1.5">
-              <label className="block text-slate-400 font-medium">โบรกเกอร์ / แพลตฟอร์ม (SEC Master Data)</label>
-              <span className="text-[11px] text-indigo-400 font-mono">เลือกจากรายการ หรือปุ่มลัด</span>
+              <label className="block text-slate-400 font-medium">{t('brokerMasterSec')}</label>
+              <span className="text-[11px] text-indigo-400 font-mono">{t('quickSelectOrList')}</span>
             </div>
 
             {/* Quick Select Pills */}
@@ -171,7 +173,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
               onChange={(e) => setPlatform(e.target.value)}
               className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500 text-xs sm:text-sm font-medium"
             >
-              <optgroup label="🏦 ธนาคาร / โบรกเกอร์ / FinTech">
+              <optgroup label={t('brokerCategoryRetail')}>
                 {brokers
                   .filter((b) => b.category === 'RETAIL')
                   .map((b) => (
@@ -180,7 +182,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
                     </option>
                   ))}
               </optgroup>
-              <optgroup label="🏛️ บริษัทหลักทรัพย์จัดการกองทุน (บลจ. จาก ก.ล.ต.)">
+              <optgroup label={t('brokerCategoryAmc')}>
                 {brokers
                   .filter((b) => b.category === 'AMC')
                   .map((b) => (
@@ -195,19 +197,19 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
           {/* ประเภทธุรกรรม & วันที่ */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-400 font-medium mb-1.5">ประเภทธุรกรรม</label>
+              <label className="block text-slate-400 font-medium mb-1.5">{t('transTypeLabel')}</label>
               <select
                 value={transType}
                 onChange={(e) => setTransType(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
               >
-                <option value="BUY">ซื้อ (BUY)</option>
-                <option value="SELL">ขายคืน (SELL)</option>
-                <option value="DIVIDEND">เงินปันผล (DIVIDEND)</option>
+                <option value="BUY">{t('buy')}</option>
+                <option value="SELL">{t('sell')}</option>
+                <option value="DIVIDEND">{t('dividend')}</option>
               </select>
             </div>
             <div>
-              <label className="block text-slate-400 font-medium mb-1.5">วันที่ทำรายการ</label>
+              <label className="block text-slate-400 font-medium mb-1.5">{t('transDateLabel')}</label>
               <input
                 type="date"
                 value={transDate}
@@ -219,11 +221,11 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
 
           {/* ค้นหากองทุน */}
           <div className="relative">
-            <label className="block text-slate-400 font-medium mb-1.5">ชื่อกองทุน / รหัสกองทุน (SEC)</label>
+            <label className="block text-slate-400 font-medium mb-1.5">{t('fundSearchLabel')}</label>
             <div className="relative">
               <input
                 type="text"
-                placeholder="พิมพ์ค้นหา เช่น K-USA, SCBGOLD..."
+                placeholder={t('fundSearchPlaceholder')}
                 value={searchQuery}
                 onChange={(e) => {
                   setSearchQuery(e.target.value);
@@ -261,7 +263,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
           {/* จำนวนหน่วย & ราคาต่อหน่วย */}
           <div className="grid grid-cols-2 gap-3">
             <div>
-              <label className="block text-slate-400 font-medium mb-1.5">จำนวนหน่วยลงทุน (Units)</label>
+              <label className="block text-slate-400 font-medium mb-1.5">{t('unitsLabel')}</label>
               <input
                 type="number"
                 step="any"
@@ -272,7 +274,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
               />
             </div>
             <div>
-              <label className="block text-slate-400 font-medium mb-1.5">ราคาต่อหน่วย (NAV)</label>
+              <label className="block text-slate-400 font-medium mb-1.5">{t('navLabel')}</label>
               <input
                 type="number"
                 step="any"
@@ -286,14 +288,14 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
 
           {/* สรุปมูลค่าคำนวณ */}
           <div className="p-3 bg-slate-950/60 border border-slate-800/80 rounded-xl flex items-center justify-between text-xs">
-            <span className="text-slate-400">มูลค่ารวมโดยประมาณ:</span>
+            <span className="text-slate-400">{t('estTotalAmount')}</span>
             <span className="text-base font-bold text-emerald-400 font-mono">{totalCalculated} THB</span>
           </div>
 
           {/* ค่าธรรมเนียม & หมายเหตุ */}
           <div className="grid grid-cols-3 gap-3">
             <div>
-              <label className="block text-slate-400 font-medium mb-1.5">ค่าธรรมเนียม (บาท)</label>
+              <label className="block text-slate-400 font-medium mb-1.5">{t('feeLabel')}</label>
               <input
                 type="number"
                 step="any"
@@ -304,10 +306,10 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
               />
             </div>
             <div className="col-span-2">
-              <label className="block text-slate-400 font-medium mb-1.5">หมายเหตุ (ถ้ามี)</label>
+              <label className="block text-slate-400 font-medium mb-1.5">{t('noteLabel')}</label>
               <input
                 type="text"
-                placeholder="เช่น ซื้อ DCA รายเดือน, ซื้อตอนดัชนีปรับฐาน"
+                placeholder={t('notePlaceholder')}
                 value={note}
                 onChange={(e) => setNote(e.target.value)}
                 className="w-full bg-slate-800 border border-slate-700 rounded-xl px-3 py-2 text-white focus:outline-none focus:border-indigo-500"
@@ -320,20 +322,20 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 transition font-medium"
+              className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 transition font-medium cursor-pointer"
             >
-              ยกเลิก
+              {t('btnCancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/30"
+              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/30 cursor-pointer"
             >
               {loading ? (
-                'กำลังบันทึก...'
+                t('savingTrans')
               ) : (
                 <>
-                  <Check className="w-4 h-4" /> บันทึกรายการ
+                  <Check className="w-4 h-4" /> {t('saveTrans')}
                 </>
               )}
             </button>
