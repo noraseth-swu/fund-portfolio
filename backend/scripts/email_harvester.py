@@ -493,11 +493,11 @@ KNOWN_FUND_ALIASES = {
     "ES-GDIV-ACC": "ES-GDIV",
     "EASTSPRING US INFORMATION TECHNOLOGY FUND": "ES-USTECH",
     "ONE EUROPEAN EQUITY FUND": "ONE-EUROEQ",
-    # Dime KKP funds
-    "KKP NDQ100-UH FUND": "KKP NDQ100-UH-E",
-    "KKP NDQ100-UH": "KKP NDQ100-UH-E",
-    "KKP US500-UH FUND": "KKP US500-UH-E",
-    "KKP US500-UH": "KKP US500-UH-E",
+    # Dime KKP funds (Normalize to SEC canonical master data)
+    "KKP NDQ100-UH-E": "KKP NDQ100-UH FUND",
+    "KKP NDQ100-UH": "KKP NDQ100-UH FUND",
+    "KKP US500-UH-E": "KKP US500-UH FUND",
+    "KKP US500-UH": "KKP US500-UH FUND",
     # Kasikorn
     "WEALTH PLUS SPEED4B": "K-WPSPEEDUP",
     "WEALTHPLUS SPEEDUP": "K-WPSPEEDUP",
@@ -986,6 +986,16 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                                 if total_amount <= 0 and units <= 0:
                                     # Non-transactional item (e.g. account opening notification)
                                     continue
+                                
+                                # MATHEMATICAL SANITY CHECK:
+                                # Thai mutual fund NAV is 1.0 - 200.0 THB.
+                                # If order number or unitholder code was extracted as unit_price, auto-correct via total_amount / units
+                                if total_amount > 0 and units > 0:
+                                    calc_price = total_amount / units
+                                    if unit_price > 500.0 or abs(units * unit_price - total_amount) > max(10.0, 0.1 * total_amount):
+                                        logger.warning("[%s] Auto-corrected absurd unit_price %.4f -> %.4f (total_amount=%.2f, units=%.4f) in %s",
+                                                       broker_tag, unit_price, calc_price, total_amount, units, filename)
+                                        unit_price = calc_price
                                 
                                 t_date = str(tx.get("trans_date") or datetime.now().strftime("%Y-%m-%d"))
                                 t_type = str(tx.get("trans_type") or "BUY").upper()
