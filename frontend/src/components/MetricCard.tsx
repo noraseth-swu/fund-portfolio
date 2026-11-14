@@ -11,10 +11,14 @@ interface Props {
 
 export const MetricCard: React.FC<Props> = ({ title, value, subValue, trend, icon }) => {
   return (
-    <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg backdrop-blur-sm relative overflow-hidden transition-all hover:border-slate-700">
-      <div className="flex items-center justify-between text-slate-400 mb-2">
-        <span className="text-xs font-medium uppercase tracking-wider">{title}</span>
-        {icon && <div className="text-slate-400 bg-slate-800/80 p-2 rounded-xl">{icon}</div>}
+    <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm hover:border-slate-300 dark:hover:border-slate-700 transition relative overflow-hidden">
+      <div className="flex items-center justify-between text-slate-500 dark:text-slate-400 mb-2">
+        <span className="text-xs font-semibold uppercase tracking-wider">{title}</span>
+        {icon && (
+          <div className="p-2 rounded-lg bg-indigo-50 text-indigo-600 dark:bg-slate-800 dark:text-slate-300 border border-indigo-100 dark:border-slate-700/60 flex items-center justify-center">
+            {icon}
+          </div>
+        )}
       </div>
 
       <div className="text-2xl font-bold tracking-tight text-slate-900 dark:text-white mb-1">

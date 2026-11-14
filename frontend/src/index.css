@@ -40,6 +40,16 @@ html.light .bg-slate-950\/80 {
   border-color: #e2e8f0 !important;
 }
 
+html.light .bg-slate-800,
+html.light .bg-slate-800\/90,
+html.light .bg-slate-800\/80,
+html.light .bg-slate-800\/60,
+html.light .bg-slate-800\/40 {
+  background-color: #f1f5f9 !important;
+  color: #334155 !important;
+  border-color: #cbd5e1 !important;
+}
+
 html.light .border-slate-800,
 html.light .border-slate-800\/60,
 html.light .border-slate-800\/80,

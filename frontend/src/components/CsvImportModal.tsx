@@ -466,19 +466,19 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
       >
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
+          className="absolute top-5 right-5 text-slate-400 hover:text-slate-900 dark:hover:text-white p-2 rounded-xl hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
+          aria-label={t('btnCancel')}
         >
           <X className="w-5 h-5" />
         </button>
 
-        {/* Modal Header */}
         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4 pr-8">
           <div>
             <div className="flex items-center gap-2">
-              <Sparkles className="w-5 h-5 text-indigo-400 animate-pulse" />
-              <h2 className="text-xl font-bold text-white">{t('importerTitle')}</h2>
+              <Sparkles className="w-5 h-5 text-indigo-600 dark:text-indigo-400" />
+              <h2 className="text-xl font-bold text-slate-900 dark:text-white">{t('importerTitle')}</h2>
             </div>
-            <p className="text-xs text-slate-400 mt-0.5">{t('importerSubtitle')}</p>
+            <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">{t('importerSubtitle')}</p>
           </div>
 
           {/* Mode Switch Tabs (Only when no rows loaded) */}
@@ -924,8 +924,9 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                       <td style={{ width: colWidths.action }} className="py-2 px-2 text-center">
                         <button
                           onClick={() => handleDeleteRow(idx)}
-                          className="text-slate-500 hover:text-rose-400 p-1.5 rounded hover:bg-rose-950/40 transition cursor-pointer"
+                          className="text-slate-400 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/40 transition cursor-pointer min-w-[32px] min-h-[32px] inline-flex items-center justify-center focus-visible:ring-2 focus-visible:ring-rose-500"
                           title={t('deleteRowTooltip')}
+                          aria-label={t('deleteRowTooltip')}
                         >
                           <Trash2 className="w-3.5 h-3.5" />
                         </button>

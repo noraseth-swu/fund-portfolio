@@ -119,12 +119,9 @@ export const App: React.FC = () => {
   if (!isSignedIn) {
     return (
       <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col justify-center items-center p-4 relative overflow-hidden">
-        {/* Background Ambient Glow */}
-        <div className="absolute top-1/4 left-1/2 -translate-x-1/2 -translate-y-1/2 w-[600px] h-[350px] bg-gradient-to-tr from-indigo-600/20 via-teal-500/15 to-transparent rounded-full blur-3xl pointer-events-none" />
-
         <div className="max-w-md w-full text-center mb-8 relative z-10">
-          <div className="inline-flex items-center justify-center w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-teal-400 shadow-xl shadow-indigo-500/25 mb-4">
-            <Wallet className="w-7 h-7 text-white" />
+          <div className="inline-flex items-center justify-center w-12 h-12 rounded-xl bg-gradient-to-tr from-indigo-600 to-indigo-700 shadow-md mb-4 logo-container">
+            <Wallet className="w-6 h-6 text-white" />
           </div>
           <h1 className="text-3xl font-extrabold tracking-tight text-white mb-2">
             {t('appTitle')}
@@ -141,7 +138,7 @@ export const App: React.FC = () => {
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" /> MFA / TOTP
             </span>
             <span className="flex items-center gap-1">
-              <Sparkles className="w-3.5 h-3.5 text-amber-400" /> Google SSO
+              <CheckCircle2 className="w-3.5 h-3.5 text-teal-400" /> Google SSO
             </span>
           </div>
         </div>
@@ -164,19 +161,19 @@ export const App: React.FC = () => {
               <Wallet className="w-5 h-5 text-white" />
             </div>
             <div>
-              <h1 className="font-bold text-base sm:text-lg tracking-tight text-white flex items-center gap-2">
+              <h1 className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
                 {t('appTitle')}
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-800 text-slate-400 font-mono border border-slate-700">
+                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 font-mono font-medium">
                   SEC API v2
                 </span>
               </h1>
-              <p className="text-[11px] text-slate-400">
+              <p className="text-[11px] text-slate-500 dark:text-slate-400">
                 {activePlatforms.length > 0 ? (
                   <>
                     <span>{t('activeBrokersPrefix')}</span>
                     {activePlatforms.map((plat, idx) => (
                       <span key={plat}>
-                        <span className="font-semibold text-slate-200">{plat}</span>
+                        <span className="font-semibold text-slate-700 dark:text-slate-200">{plat}</span>
                         {idx < activePlatforms.length - 1 && ' • '}
                       </span>
                     ))}
@@ -189,32 +186,34 @@ export const App: React.FC = () => {
           </div>
 
           <div className="flex items-center gap-2 sm:gap-2.5">
-            {/* Theme Selector (Bright / Dark / Auto) */}
-            <div className="flex items-center bg-slate-900 border border-slate-700/60 rounded-xl p-0.5 text-xs theme-switcher-container">
+            <div className="flex items-center bg-slate-100 border border-slate-200 dark:bg-slate-900 dark:border-slate-700/60 rounded-xl p-0.5 text-xs theme-switcher-container">
               <button
                 onClick={() => setTheme('light')}
-                className={`p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn ${
-                  theme === 'light' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-400 hover:text-white'
+                className={`min-w-[32px] min-h-[32px] p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                  theme === 'light' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                 }`}
                 title={t('themeLight')}
+                aria-label={t('themeLight')}
               >
                 <Sun className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setTheme('dark')}
-                className={`p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn ${
-                  theme === 'dark' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-400 hover:text-white'
+                className={`min-w-[32px] min-h-[32px] p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                  theme === 'dark' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                 }`}
                 title={t('themeDark')}
+                aria-label={t('themeDark')}
               >
                 <Moon className="w-3.5 h-3.5" />
               </button>
               <button
                 onClick={() => setTheme('auto')}
-                className={`p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn ${
-                  theme === 'auto' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-400 hover:text-white'
+                className={`min-w-[32px] min-h-[32px] p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-500 ${
+                  theme === 'auto' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
                 }`}
                 title={t('themeAuto')}
+                aria-label={t('themeAuto')}
               >
                 <Laptop className="w-3.5 h-3.5" />
               </button>
@@ -241,13 +240,12 @@ export const App: React.FC = () => {
               <span className="hidden md:inline">{syncing ? t('syncing') : t('syncNav')}</span>
             </button>
 
-            {/* Universal Importer (PDF / Statement AI / CSV) */}
             <button
               onClick={() => setIsCsvModalOpen(true)}
-              className="btn-importer px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm shadow-indigo-900/30 cursor-pointer"
+              className="btn-importer px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm shadow-indigo-900/30 cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
               title={t('importerSubtitle')}
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               <span className="hidden sm:inline">{t('importData')}</span>
             </button>
 
@@ -330,21 +328,18 @@ export const App: React.FC = () => {
               />
             </div>
 
-            {/* Middle Section: Platform Allocation & Overview */}
             <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
-              {/* Allocation Donut Chart */}
-              <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg">
+              <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm">
                 <div className="flex items-center justify-between mb-4">
-                  <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                    <PieIcon className="w-4 h-4 text-indigo-400" /> {t('allocationTitle')}
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <PieIcon className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> {t('allocationTitle')}
                   </h3>
                 </div>
                 <AllocationChart platforms={portfolio?.platforms || {}} />
               </div>
 
-              {/* Platform Cards Breakdown */}
-              <div className="lg:col-span-2 bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg flex flex-col justify-between">
-                <h3 className="text-sm font-semibold text-slate-200 mb-4">{t('platformOverview')}</h3>
+              <div className="lg:col-span-2 bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm flex flex-col justify-between">
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 mb-4">{t('platformOverview')}</h3>
                 {activePlatforms.length > 0 ? (
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-3">
                     {activePlatforms.map((plat) => {
@@ -407,23 +402,21 @@ export const App: React.FC = () => {
               </div>
             </div>
 
-            {/* Holdings Table Section */}
-            <div className="bg-slate-900/80 border border-slate-800 rounded-2xl p-5 shadow-lg space-y-4">
+            <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
               <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-200 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-indigo-400" /> {t('holdingsTitle')}
+                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                  <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> {t('holdingsTitle')}
                 </h3>
 
-                {/* Filter Tabs */}
-                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs filter-tabs-container">
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs filter-tabs-container">
                   {['ALL', ...activePlatforms].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setSelectedPlatform(tab)}
                       className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                         selectedPlatform === tab
-                          ? 'bg-indigo-600 text-white shadow-md tab-btn-active'
-                          : 'text-slate-400 hover:text-slate-200 tab-btn-inactive'
+                          ? 'bg-indigo-600 text-white shadow-sm tab-btn-active'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 tab-btn-inactive'
                       }`}
                     >
                       {tab === 'ALL' ? t('allPlatforms') : tab}

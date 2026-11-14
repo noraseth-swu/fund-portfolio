@@ -124,8 +124,9 @@ export const TransactionHistoryModal: React.FC<Props> = ({ isOpen, onClose, onCh
                       <button
                         onClick={() => handleDelete(item.id)}
                         disabled={deletingId === item.id}
-                        className="text-slate-500 hover:text-rose-400 p-1.5 rounded-lg hover:bg-rose-950/30 transition disabled:opacity-50 cursor-pointer"
+                        className="text-slate-400 hover:text-rose-500 p-2 rounded-lg hover:bg-rose-50 dark:hover:bg-rose-950/30 transition disabled:opacity-50 cursor-pointer min-w-[36px] min-h-[36px] inline-flex items-center justify-center focus-visible:ring-2 focus-visible:ring-rose-500"
                         title={t('deleteTransTooltip')}
+                        aria-label={t('deleteTransTooltip')}
                       >
                         <Trash2 className="w-4 h-4" />
                       </button>
