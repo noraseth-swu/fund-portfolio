@@ -29,15 +29,32 @@ impl SyncService {
         let mut updated_count = 0;
 
         for held_id in &held_ids {
+            // ทำความสะอาดชื่อเพื่อเพิ่มความแม่นยำในการค้นหา (เช่น ตัด (Accumulation), Fund ออก)
+            let clean_name = held_id
+                .replace("(Accumulation)", "")
+                .replace("Fund", "")
+                .trim()
+                .to_string();
+            let clean_pattern = format!("%{}%", clean_name.to_lowercase());
+
             // ค้นหา SEC proj_id จากฐานข้อมูลกองทุน (ถ้า held_id เป็นชื่อย่อหรือชื่อเต็ม)
             let sec_proj_id = sqlx::query_scalar::<_, String>(
                 r#"
                 SELECT proj_id FROM funds 
-                WHERE proj_id = ?1 OR LOWER(proj_abbr_name) = LOWER(?1) OR LOWER(proj_name_en) = LOWER(?1) OR LOWER(proj_name_th) = LOWER(?1)
+                WHERE proj_id = ?1 
+                   OR LOWER(proj_abbr_name) = LOWER(?1) 
+                   OR LOWER(proj_name_en) = LOWER(?1) 
+                   OR LOWER(proj_name_th) = LOWER(?1)
+                   OR LOWER(proj_name_en) LIKE ?2
+                   OR LOWER(proj_abbr_name) LIKE ?2
+                ORDER BY 
+                    CASE WHEN fund_status = 'Registered' THEN 1 ELSE 2 END,
+                    CASE WHEN proj_abbr_name LIKE 'ES-%' THEN 1 ELSE 2 END
                 LIMIT 1
                 "#,
             )
             .bind(held_id)
+            .bind(&clean_pattern)
             .fetch_optional(pool)
             .await
             .unwrap_or(None)

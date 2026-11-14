@@ -187,15 +187,13 @@ impl SecClient {
             .await
     }
 
-    /// ดึงข้อมูลประวัติ NAV รายวันสำหรับกองทุนที่ระบุ (proj_id)
+    /// ดึงข้อมูลประวัติ NAV รายวันสำหรับกองทุนที่ระบุ (proj_id) โดยอ่านทุกหน้าจนถึงราคาล่าสุด
     pub async fn get_fund_nav_history(
         &mut self,
         proj_id: &str,
     ) -> Result<Vec<DailyNavInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let query = [("proj_id", proj_id)];
-        let resp = self
-            .get_paged_single::<DailyNavInfo>("/v2/fund/daily-info/nav", &query)
-            .await?;
-        Ok(resp.items)
+        self.get_paged_all::<DailyNavInfo>("/v2/fund/daily-info/nav", &query, 100)
+            .await
     }
 }

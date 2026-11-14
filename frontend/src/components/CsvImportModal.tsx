@@ -30,6 +30,7 @@ export interface ParsedRow {
   platform: string;
   fundCode: string;
   type: string;
+  amount?: string;
   units: string;
   unitPrice: string;
   fee: string;
@@ -417,6 +418,18 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
     setRows(updated);
   };
 
+  const getRowAmount = (r: ParsedRow): number => {
+    if (r.amount && !isNaN(parseFloat(r.amount)) && parseFloat(r.amount) > 0) {
+      return Math.round(parseFloat(r.amount) * 100) / 100;
+    }
+    const u = parseFloat(r.units);
+    const p = parseFloat(r.unitPrice);
+    if (!isNaN(u) && !isNaN(p) && u > 0 && p > 0) {
+      return Math.round(u * p * 100) / 100;
+    }
+    return 0;
+  };
+
   const handleImportSubmit = async () => {
     const validRows = rows.filter((r) => r.isValid);
     if (validRows.length === 0) {
@@ -427,17 +440,21 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
     setLoading(true);
     setLoadingStatus(t('savingToDb'));
     try {
-      const payloads = validRows.map((r) => ({
-        proj_id: r.fundCode,
-        fund_abbr: r.fundCode,
-        platform: r.platform,
-        trans_type: r.type,
-        trans_date: r.date,
-        units: r.units,
-        unit_price: r.unitPrice,
-        fee: r.fee,
-        note: r.note,
-      }));
+      const payloads = validRows.map((r) => {
+        const amt = getRowAmount(r);
+        return {
+          proj_id: r.fundCode,
+          fund_abbr: r.fundCode,
+          platform: r.platform,
+          trans_type: r.type,
+          trans_date: r.date,
+          units: r.units,
+          unit_price: r.unitPrice,
+          total_amount: amt.toFixed(2),
+          fee: r.fee,
+          note: r.note,
+        };
+      });
 
       await createTransactionsBatch(payloads);
       onSuccess();
@@ -453,8 +470,8 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
   const validCount = rows.filter((r) => r.isValid).length;
   const invalidCount = rows.length - validCount;
   const totalAmount = rows
-    .filter((r) => r.isValid && !isNaN(parseFloat(r.units)) && !isNaN(parseFloat(r.unitPrice)))
-    .reduce((sum, r) => sum + parseFloat(r.units) * parseFloat(r.unitPrice), 0);
+    .filter((r) => r.isValid)
+    .reduce((sum, r) => sum + getRowAmount(r), 0);
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in overflow-y-auto">
@@ -865,10 +882,10 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                         </select>
                       </td>
 
-                      {/* Total Amount (Units * NAV) */}
+                      {/* Total Amount (Amount THB) */}
                       <td style={{ width: colWidths.amount }} className="py-2 px-2.5 text-right font-mono text-emerald-700 dark:text-emerald-400 font-bold whitespace-nowrap">
-                        {!isNaN(parseFloat(row.units)) && !isNaN(parseFloat(row.unitPrice))
-                          ? (parseFloat(row.units) * parseFloat(row.unitPrice)).toLocaleString(undefined, {
+                        {getRowAmount(row) > 0
+                          ? getRowAmount(row).toLocaleString(undefined, {
                               minimumFractionDigits: 2,
                               maximumFractionDigits: 2,
                             })

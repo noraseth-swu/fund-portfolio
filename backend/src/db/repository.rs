@@ -108,12 +108,18 @@ impl Repository {
         Ok(())
     }
 
-    /// บันทึกประวัติราคา NAV รายวัน
+    /// บันทึกประวัติราคา NAV รายวัน (ใช้ Database Transaction เพื่อประสิทธิภาพสูงสุด)
     pub async fn upsert_nav_history(
         pool: &DbPool,
         proj_id: &str,
         nav_items: &[DailyNavInfo],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        if nav_items.is_empty() {
+            return Ok(());
+        }
+
+        let mut tx = pool.begin().await?;
+
         for item in nav_items {
             let last_val_str = item.last_val.map(|v| v.to_string()).unwrap_or_default();
             let buy_price_str = item.buy_price.map(|v| v.to_string());
@@ -138,25 +144,29 @@ impl Repository {
             .bind(&buy_price_str)
             .bind(&sell_price_str)
             .bind(&item.fund_class_name)
-            .execute(pool)
+            .execute(&mut *tx)
             .await?;
-
-            // อัปเดตราคาล่าสุดลงในตาราง funds ด้วย
-            if let Some(val) = item.last_val {
-                sqlx::query(
-                    r#"
-                    UPDATE funds 
-                    SET last_nav = ?1, last_nav_date = ?2, updated_at = CURRENT_TIMESTAMP
-                    WHERE proj_id = ?3 AND (last_nav_date IS NULL OR last_nav_date <= ?2)
-                    "#,
-                )
-                .bind(val.to_string())
-                .bind(&item.nav_date)
-                .bind(proj_id)
-                .execute(pool)
-                .await?;
-            }
         }
+
+        // อัปเดตราคาล่าสุดลงในตาราง funds เพียงครั้งเดียวด้วยรายการที่มีราคาล่าสุด
+        if let Some(last_item) = nav_items.iter().rev().find(|it| it.last_val.is_some())
+            && let Some(val) = last_item.last_val
+        {
+            sqlx::query(
+                r#"
+                UPDATE funds 
+                SET last_nav = ?1, last_nav_date = ?2, updated_at = CURRENT_TIMESTAMP
+                WHERE proj_id = ?3 AND (last_nav_date IS NULL OR last_nav_date <= ?2)
+                "#,
+            )
+            .bind(val.to_string())
+            .bind(&last_item.nav_date)
+            .bind(proj_id)
+            .execute(&mut *tx)
+            .await?;
+        }
+
+        tx.commit().await?;
         Ok(())
     }
 
