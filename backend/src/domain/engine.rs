@@ -68,32 +68,34 @@ impl CalculationEngine {
 
             match tx.trans_type {
                 TransactionType::Buy => {
-                    // ต้นทุนที่ซื้อรวมค่าธรรมเนียม
-                    let buy_cost = tx.total_amount + tx.fee;
-                    tracker.units += tx.units;
+                    // ป้องกันค่า units หรือ amount ที่ส่งมาติดลบ
+                    let buy_units = tx.units.abs();
+                    let buy_cost = tx.total_amount.abs() + tx.fee.abs();
+                    tracker.units += buy_units;
                     tracker.total_cost += buy_cost;
                 }
                 TransactionType::Sell => {
+                    let units_to_sell = tx.units.abs();
                     if tracker.units > Decimal::ZERO {
                         let avg_cost = tracker.total_cost / tracker.units;
-                        let cost_of_units_sold = tx.units * avg_cost;
-                        let net_proceeds = tx.total_amount - tx.fee;
+                        let cost_of_units_sold = units_to_sell * avg_cost;
+                        let net_proceeds = tx.total_amount.abs() - tx.fee.abs();
 
                         // Realized P/L = เงินที่ได้จากการขายสุทธิ - ต้นทุนของหน่วยที่ขาย
                         let gain_loss = net_proceeds - cost_of_units_sold;
                         tracker.realized_pl += gain_loss;
 
-                        tracker.units -= tx.units;
-                        if tracker.units <= Decimal::ZERO {
+                        if units_to_sell >= tracker.units {
                             tracker.units = Decimal::ZERO;
                             tracker.total_cost = Decimal::ZERO;
                         } else {
+                            tracker.units -= units_to_sell;
                             tracker.total_cost -= cost_of_units_sold;
                         }
                     }
                 }
                 TransactionType::Dividend => {
-                    tracker.dividend += tx.total_amount;
+                    tracker.dividend += tx.total_amount.abs();
                 }
             }
         }
@@ -107,7 +109,7 @@ impl CalculationEngine {
 
         let mut platform_groups: HashMap<String, (Decimal, Decimal, Decimal)> = HashMap::new(); // (cost, market_val, realized)
 
-        for (_, tracker) in trackers {
+        for (_, mut tracker) in trackers {
             let (mut current_nav, nav_date) = nav_map
                 .get(&tracker.proj_id)
                 .map(|(_, _, nav, date)| (*nav, date.clone()))
@@ -122,13 +124,23 @@ impl CalculationEngine {
                 }
             }
 
+            // ป้องกันหน่วยติดลบ
+            if tracker.units <= Decimal::ZERO {
+                tracker.units = Decimal::ZERO;
+                tracker.total_cost = Decimal::ZERO;
+            }
+
             let avg_cost = if tracker.units > Decimal::ZERO {
                 (tracker.total_cost / tracker.units).round_dp(4)
             } else {
                 Decimal::ZERO
             };
 
-            let market_value = (tracker.units * current_nav).round_dp(2);
+            let market_value = if tracker.units > Decimal::ZERO {
+                (tracker.units * current_nav).round_dp(2).max(Decimal::ZERO)
+            } else {
+                Decimal::ZERO
+            };
             let unrealized_pl = if tracker.units > Decimal::ZERO {
                 market_value - tracker.total_cost
             } else {
@@ -141,8 +153,10 @@ impl CalculationEngine {
                 Decimal::ZERO
             };
 
-            portfolio_cost += tracker.total_cost;
-            portfolio_market_val += market_value;
+            if tracker.units > Decimal::ZERO {
+                portfolio_cost += tracker.total_cost;
+                portfolio_market_val += market_value;
+            }
             portfolio_realized += tracker.realized_pl;
             portfolio_dividend += tracker.dividend;
 
@@ -152,8 +166,10 @@ impl CalculationEngine {
                 Decimal::ZERO,
                 Decimal::ZERO,
             ));
-            entry.0 += tracker.total_cost;
-            entry.1 += market_value;
+            if tracker.units > Decimal::ZERO {
+                entry.0 += tracker.total_cost;
+                entry.1 += market_value;
+            }
             entry.2 += tracker.realized_pl;
 
             // แสดงเฉพาะรายการที่ยังมีหน่วยลงทุน หรือมี Realized P/L
