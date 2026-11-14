@@ -160,7 +160,7 @@ export const App: React.FC = () => {
       <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
         <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
           <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-teal-400 flex items-center justify-center shadow-lg shadow-indigo-500/20">
+            <div className="w-10 h-10 rounded-xl bg-gradient-to-tr from-indigo-600 via-indigo-500 to-teal-400 flex items-center justify-center shadow-lg shadow-indigo-500/20 logo-container">
               <Wallet className="w-5 h-5 text-white" />
             </div>
             <div>
@@ -190,11 +190,11 @@ export const App: React.FC = () => {
 
           <div className="flex items-center gap-2 sm:gap-2.5">
             {/* Theme Selector (Bright / Dark / Auto) */}
-            <div className="flex items-center bg-slate-900 border border-slate-700/60 rounded-xl p-0.5 text-xs">
+            <div className="flex items-center bg-slate-900 border border-slate-700/60 rounded-xl p-0.5 text-xs theme-switcher-container">
               <button
                 onClick={() => setTheme('light')}
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  theme === 'light' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                className={`p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn ${
+                  theme === 'light' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-400 hover:text-white'
                 }`}
                 title={t('themeLight')}
               >
@@ -202,8 +202,8 @@ export const App: React.FC = () => {
               </button>
               <button
                 onClick={() => setTheme('dark')}
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  theme === 'dark' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                className={`p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn ${
+                  theme === 'dark' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-400 hover:text-white'
                 }`}
                 title={t('themeDark')}
               >
@@ -211,8 +211,8 @@ export const App: React.FC = () => {
               </button>
               <button
                 onClick={() => setTheme('auto')}
-                className={`p-1.5 rounded-lg transition cursor-pointer ${
-                  theme === 'auto' ? 'bg-indigo-600 text-white shadow-sm' : 'text-slate-400 hover:text-white'
+                className={`p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn ${
+                  theme === 'auto' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-400 hover:text-white'
                 }`}
                 title={t('themeAuto')}
               >
@@ -223,7 +223,7 @@ export const App: React.FC = () => {
             {/* Language Switcher [TH | EN] */}
             <button
               onClick={() => setLocale(locale === 'th' ? 'en' : 'th')}
-              className="px-2 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/60 text-xs font-bold text-slate-300 hover:text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
+              className="btn-header-secondary px-2 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/60 text-xs font-bold text-slate-300 hover:text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
               title="สลับภาษา / Switch Language (TH / EN)"
             >
               <Globe className="w-3.5 h-3.5 text-indigo-400" />
@@ -234,7 +234,7 @@ export const App: React.FC = () => {
             <button
               onClick={handleSyncNav}
               disabled={syncing}
-              className="px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
               title={t('syncNav')}
             >
               <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-indigo-400' : ''}`} />
@@ -244,7 +244,7 @@ export const App: React.FC = () => {
             {/* Universal Importer (PDF / Statement AI / CSV) */}
             <button
               onClick={() => setIsCsvModalOpen(true)}
-              className="px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm shadow-indigo-900/30 cursor-pointer"
+              className="btn-importer px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm shadow-indigo-900/30 cursor-pointer"
               title={t('importerSubtitle')}
             >
               <Sparkles className="w-3.5 h-3.5 text-indigo-400 animate-pulse" />
@@ -254,7 +254,7 @@ export const App: React.FC = () => {
             {/* History button */}
             <button
               onClick={() => setIsHistoryModalOpen(true)}
-              className="px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer"
             >
               <History className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t('transHistory')}</span>
@@ -263,10 +263,10 @@ export const App: React.FC = () => {
             {/* Add Transaction button */}
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer"
+              className="btn-primary-indigo px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer"
             >
-              <Plus className="w-4 h-4" />
-              <span className="hidden sm:inline">{t('addTransaction')}</span>
+              <Plus className="w-4 h-4 text-white" />
+              <span className="hidden sm:inline text-white">{t('addTransaction')}</span>
             </button>
 
             {/* Clerk User Avatar & Profile Management */}
@@ -359,8 +359,8 @@ export const App: React.FC = () => {
                           onClick={() => setSelectedPlatform(selectedPlatform === plat ? 'ALL' : plat)}
                           className={`p-4 rounded-xl border cursor-pointer transition ${
                             selectedPlatform === plat
-                              ? 'border-indigo-500 bg-indigo-950/20'
-                              : 'border-slate-800 bg-slate-950/40 hover:border-slate-700'
+                              ? 'border-indigo-500 bg-indigo-50 dark:bg-indigo-950/20 shadow-sm'
+                              : 'border-slate-200 bg-white hover:border-indigo-300 dark:border-slate-800 dark:bg-slate-950/40 dark:hover:border-slate-700'
                           }`}
                         >
                           <div className="flex items-center justify-between mb-2">
@@ -372,7 +372,7 @@ export const App: React.FC = () => {
                           <div className="flex justify-between items-end">
                             <div>
                               <div className="text-xs text-slate-400">{t('marketValHeader')}</div>
-                              <div className="text-base font-bold text-white font-mono">
+                              <div className="text-base font-bold text-slate-900 dark:text-white font-mono">
                                 {p ? formatMoney(p.market_value) : '0.00'}{' '}
                                 <span className="text-[10px] text-slate-400">THB</span>
                               </div>
@@ -381,7 +381,7 @@ export const App: React.FC = () => {
                               <div className="text-xs text-slate-400">{t('plHeader')}</div>
                               <div
                                 className={`text-xs font-bold font-mono ${
-                                  isPos ? 'text-emerald-400' : 'text-rose-400'
+                                  isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                                 }`}
                               >
                                 {p ? `${isPos ? '+' : ''}${formatMoney(upl)} (${uplPct}%)` : '-'}
@@ -415,15 +415,15 @@ export const App: React.FC = () => {
                 </h3>
 
                 {/* Filter Tabs */}
-                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs">
+                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-950 rounded-xl border border-slate-800 text-xs filter-tabs-container">
                   {['ALL', ...activePlatforms].map((tab) => (
                     <button
                       key={tab}
                       onClick={() => setSelectedPlatform(tab)}
                       className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
                         selectedPlatform === tab
-                          ? 'bg-indigo-600 text-white shadow-md'
-                          : 'text-slate-400 hover:text-slate-200'
+                          ? 'bg-indigo-600 text-white shadow-md tab-btn-active'
+                          : 'text-slate-400 hover:text-slate-200 tab-btn-inactive'
                       }`}
                     >
                       {tab === 'ALL' ? t('allPlatforms') : tab}
@@ -461,7 +461,7 @@ export const App: React.FC = () => {
                         return (
                           <tr key={`${h.proj_id}-${h.platform}-${i}`} className="hover:bg-slate-800/30 transition">
                             <td className="py-3.5 px-4 whitespace-nowrap">
-                              <span className="font-bold text-white block">{h.fund_abbr}</span>
+                              <span className="font-bold text-slate-900 dark:text-white block">{h.fund_abbr}</span>
                               <span className="text-[11px] text-slate-400 block truncate max-w-xs">
                                 {h.fund_name_th || h.proj_id}
                               </span>
@@ -469,20 +469,20 @@ export const App: React.FC = () => {
                             <td className="py-3.5 px-4 whitespace-nowrap">
                               <PlatformBadge platform={h.platform} />
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono text-slate-300">
+                            <td className="py-3.5 px-4 text-right font-mono text-slate-600 dark:text-slate-300">
                               {parseFloat(h.total_units).toLocaleString(undefined, { minimumFractionDigits: 4 })}
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono text-slate-300">
+                            <td className="py-3.5 px-4 text-right font-mono text-slate-600 dark:text-slate-300">
                               {parseFloat(h.avg_cost).toFixed(4)}
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono text-indigo-300 font-semibold">
+                            <td className="py-3.5 px-4 text-right font-mono text-indigo-600 dark:text-indigo-300 font-semibold">
                               {parseFloat(h.current_nav).toFixed(4)}
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono font-bold text-white">
+                            <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
                               {formatMoney(h.market_value)}
                             </td>
                             <td className="py-3.5 px-4 text-right whitespace-nowrap font-mono">
-                              <span className={`font-bold ${isPos ? 'text-emerald-400' : 'text-rose-400'}`}>
+                              <span className={`font-bold ${isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                 {isPos ? '+' : ''}
                                 {formatMoney(h.unrealized_pl)}
                               </span>

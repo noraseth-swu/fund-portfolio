@@ -117,10 +117,10 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
+      <div className="modal-card bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-lg p-6 shadow-2xl relative">
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -156,10 +156,10 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
                   type="button"
                   key={item.id}
                   onClick={() => setPlatform(item.id)}
-                  className={`py-1 px-2.5 rounded-lg border text-xs font-semibold transition ${
+                  className={`py-1 px-2.5 rounded-lg border text-xs font-semibold transition cursor-pointer ${
                     platform === item.id
-                      ? 'border-indigo-500 bg-indigo-950/60 text-indigo-300 ring-1 ring-indigo-400/40'
-                      : 'border-slate-800 bg-slate-800/40 text-slate-400 hover:border-slate-700'
+                      ? 'border-indigo-500 bg-indigo-50 text-indigo-700 dark:bg-indigo-950/60 dark:text-indigo-300 ring-1 ring-indigo-400/40'
+                      : 'border-slate-200 bg-slate-100 text-slate-600 dark:border-slate-800 dark:bg-slate-800/40 dark:text-slate-400 hover:border-slate-400 dark:hover:border-slate-700'
                   }`}
                 >
                   {item.label}
@@ -322,20 +322,20 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
             <button
               type="button"
               onClick={onClose}
-              className="px-4 py-2.5 rounded-xl border border-slate-700 text-slate-300 hover:bg-slate-800 transition font-medium cursor-pointer"
+              className="btn-header-secondary px-4 py-2.5 rounded-xl border text-xs font-semibold transition cursor-pointer"
             >
               {t('btnCancel')}
             </button>
             <button
               type="submit"
               disabled={loading}
-              className="px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/30 cursor-pointer"
+              className="btn-primary-indigo px-5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white font-semibold transition flex items-center gap-1.5 disabled:opacity-50 shadow-lg shadow-indigo-600/30 cursor-pointer"
             >
               {loading ? (
                 t('savingTrans')
               ) : (
                 <>
-                  <Check className="w-4 h-4" /> {t('saveTrans')}
+                  <Check className="w-4 h-4 text-white" /> {t('saveTrans')}
                 </>
               )}
             </button>

@@ -460,13 +460,13 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-black/75 backdrop-blur-md animate-fade-in overflow-y-auto">
       <div
-        className={`bg-slate-900 border border-slate-800 rounded-2xl w-full p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[92vh] transition-all duration-300 ${
+        className={`modal-card bg-slate-900 border border-slate-800 rounded-2xl w-full p-5 sm:p-6 shadow-2xl relative flex flex-col max-h-[92vh] transition-all duration-300 ${
           rows.length > 0 ? 'max-w-[98vw] xl:max-w-[95vw]' : 'max-w-4xl'
         }`}
       >
         <button
           onClick={onClose}
-          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition"
+          className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
         >
           <X className="w-5 h-5" />
         </button>
@@ -483,13 +483,13 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
           {/* Mode Switch Tabs (Only when no rows loaded) */}
           {rows.length === 0 && (
-            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 self-start sm:self-auto">
+            <div className="flex items-center bg-slate-950 p-1 rounded-xl border border-slate-800 self-start sm:self-auto filter-tabs-container">
               <button
                 onClick={() => setActiveTab('pdf')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                   activeTab === 'pdf'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 tab-btn-active'
+                    : 'text-slate-400 hover:text-slate-200 tab-btn-inactive'
                 }`}
               >
                 <FileText className="w-3.5 h-3.5" />
@@ -498,10 +498,10 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
               <button
                 onClick={() => setActiveTab('paste')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                   activeTab === 'paste'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 tab-btn-active'
+                    : 'text-slate-400 hover:text-slate-200 tab-btn-inactive'
                 }`}
               >
                 <ClipboardPaste className="w-3.5 h-3.5" />
@@ -510,10 +510,10 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
               <button
                 onClick={() => setActiveTab('csv')}
-                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition ${
+                className={`flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold whitespace-nowrap transition cursor-pointer ${
                   activeTab === 'csv'
-                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30'
-                    : 'text-slate-400 hover:text-slate-200'
+                    ? 'bg-indigo-600 text-white shadow-md shadow-indigo-600/30 tab-btn-active'
+                    : 'text-slate-400 hover:text-slate-200 tab-btn-inactive'
                 }`}
               >
                 <FileSpreadsheet className="w-3.5 h-3.5" />
@@ -942,12 +942,12 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                 <button
                   type="button"
                   onClick={onClose}
-                  className="px-4 py-2 text-xs font-semibold text-slate-400 hover:text-white transition cursor-pointer"
+                  className="btn-header-secondary px-4 py-2 text-xs font-semibold rounded-xl border transition cursor-pointer"
                 >
                   {t('btnCancel')}
                 </button>
                 {tokenUsage && (
-                  <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 border-l border-slate-800 pl-3">
+                  <span className="text-[11px] text-slate-500 font-mono flex items-center gap-1.5 border-l border-slate-700 pl-3">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400/80 shrink-0" />
                     <span>
                       {t('geminiTokens')}: {tokenUsage.total_tokens.toLocaleString()} (Prompt: {tokenUsage.prompt_tokens.toLocaleString()} / Output: {tokenUsage.candidates_tokens.toLocaleString()})
@@ -960,7 +960,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                 type="button"
                 onClick={handleImportSubmit}
                 disabled={loading || validCount === 0}
-                className="flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-900/30 cursor-pointer"
+                className="btn-confirm-import flex items-center justify-center gap-2 px-5 py-2.5 bg-gradient-to-r from-emerald-600 to-teal-600 hover:from-emerald-500 hover:to-teal-500 disabled:opacity-50 text-white rounded-xl text-xs font-bold transition shadow-lg shadow-emerald-900/30 cursor-pointer"
               >
                 <Check className="w-4 h-4" />
                 <span>{t('btnConfirmImport', { n: validCount })}</span>

@@ -53,7 +53,7 @@ export const TransactionHistoryModal: React.FC<Props> = ({ isOpen, onClose, onCh
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-sm animate-fade-in">
-      <div className="bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
+      <div className="modal-card bg-slate-900 border border-slate-800 rounded-2xl w-full max-w-4xl p-6 shadow-2xl relative flex flex-col max-h-[85vh]">
         <button
           onClick={onClose}
           className="absolute top-5 right-5 text-slate-400 hover:text-white p-1 rounded-lg hover:bg-slate-800 transition cursor-pointer"
@@ -140,7 +140,7 @@ export const TransactionHistoryModal: React.FC<Props> = ({ isOpen, onClose, onCh
         <div className="mt-4 flex justify-end">
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 text-slate-300 transition text-xs font-semibold cursor-pointer"
+            className="btn-header-secondary px-4 py-2 rounded-xl border text-xs font-semibold transition cursor-pointer"
           >
             {t('btnClose')}
           </button>
