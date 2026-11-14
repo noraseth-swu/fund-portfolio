@@ -6,6 +6,7 @@ import {
   useUser,
 } from '@clerk/react';
 import {
+  Wallet,
   TrendingUp,
   RefreshCw,
   Plus,
