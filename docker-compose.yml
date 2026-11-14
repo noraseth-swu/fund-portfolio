@@ -1,0 +1,21 @@
+services:
+  fund-portfolio:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: fund-portfolio
+    restart: unless-stopped
+    ports:
+      - "8088:8088"
+    environment:
+      # SEC Open API Subscription Key
+      - SEC_API_KEY=${SEC_API_KEY}
+      # Clerk Authentication Keys
+      - NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY=${NEXT_PUBLIC_CLERK_PUBLISHABLE_KEY}
+      - CLERK_SECRET_KEY=${CLERK_SECRET_KEY}
+      # Server Config
+      - SERVER_PORT=8088
+      - DATABASE_URL=sqlite:/app/data/portfolio.db
+    volumes:
+      # Mount SQLite Database folder for persistence & easy backup
+      - ./data:/app/data
