@@ -100,8 +100,21 @@ pub async fn create_transaction(
 
     let fee = payload.fee.unwrap_or(Decimal::ZERO);
 
+    let idempotency_key = Transaction::compute_idempotency_key(
+        &auth.user_id,
+        &payload.platform,
+        &payload.proj_id,
+        payload.fund_abbr.as_deref(),
+        &payload.trans_date,
+        &payload.trans_type,
+        &payload.units,
+        &total_amount,
+        payload.note.as_deref(),
+    );
+
     let tx = Transaction {
         id: Uuid::new_v4().to_string(),
+        idempotency_key: Some(idempotency_key),
         proj_id: payload.proj_id,
         fund_abbr: payload.fund_abbr,
         platform: Platform::from_str(&payload.platform),
@@ -114,15 +127,22 @@ pub async fn create_transaction(
         note: payload.note,
     };
 
-    Repository::insert_transaction(&state.pool, &auth.user_id, &tx)
+    let inserted = Repository::insert_transaction(&state.pool, &auth.user_id, &tx)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    Ok((StatusCode::CREATED, Json(tx)))
+    Ok((
+        StatusCode::CREATED,
+        Json(serde_json::json!({
+            "success": true,
+            "inserted": inserted,
+            "transaction": tx
+        })),
+    ))
 }
 
 /// POST /api/transactions/batch
-/// บันทึกรายการธุรกรรมหลายรายการพร้อมกัน (นำเข้าจากไฟล์ CSV)
+/// บันทึกรายการธุรกรรมหลายรายการพร้อมกัน (นำเข้าจากไฟล์ CSV หรือ Statement พร้อมระบบป้องกันซ้ำ)
 pub async fn create_transactions_batch(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -137,8 +157,21 @@ pub async fn create_transactions_batch(
 
         let fee = payload.fee.unwrap_or(Decimal::ZERO);
 
+        let idempotency_key = Transaction::compute_idempotency_key(
+            &auth.user_id,
+            &payload.platform,
+            &payload.proj_id,
+            payload.fund_abbr.as_deref(),
+            &payload.trans_date,
+            &payload.trans_type,
+            &payload.units,
+            &total_amount,
+            payload.note.as_deref(),
+        );
+
         txs.push(Transaction {
             id: Uuid::new_v4().to_string(),
+            idempotency_key: Some(idempotency_key),
             proj_id: payload.proj_id,
             fund_abbr: payload.fund_abbr,
             platform: Platform::from_str(&payload.platform),
@@ -152,15 +185,17 @@ pub async fn create_transactions_batch(
         });
     }
 
-    let count = Repository::insert_transactions_batch(&state.pool, &auth.user_id, &txs)
-        .await
-        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let (inserted_count, skipped_count) =
+        Repository::insert_transactions_batch(&state.pool, &auth.user_id, &txs)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
     Ok((
         StatusCode::CREATED,
         Json(serde_json::json!({
             "success": true,
-            "inserted_count": count
+            "inserted_count": inserted_count,
+            "skipped_count": skipped_count
         })),
     ))
 }

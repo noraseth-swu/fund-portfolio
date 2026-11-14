@@ -73,6 +73,7 @@ impl TransactionType {
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Transaction {
     pub id: String,
+    pub idempotency_key: Option<String>,
     pub proj_id: String,
     pub fund_abbr: Option<String>,
     pub platform: Platform,
@@ -83,6 +84,55 @@ pub struct Transaction {
     pub total_amount: Decimal, // มูลค่ารวม (บาท)
     pub fee: Decimal,          // ค่าธรรมเนียม (ถ้ามี)
     pub note: Option<String>,
+}
+
+impl Transaction {
+    /// คำนวณ Idempotency Key (SHA-256) สำหรับตรวจสอบและป้องกันรายการซ้ำ
+    #[allow(clippy::too_many_arguments)]
+    pub fn compute_idempotency_key(
+        user_id: &str,
+        platform: &str,
+        proj_id: &str,
+        fund_abbr: Option<&str>,
+        trans_date: &str,
+        trans_type: &str,
+        units: &Decimal,
+        total_amount: &Decimal,
+        note: Option<&str>,
+    ) -> String {
+        use sha2::{Digest, Sha256};
+        let mut hasher = Sha256::new();
+        hasher.update(user_id.trim().as_bytes());
+        hasher.update(b"|");
+        hasher.update(platform.trim().to_uppercase().as_bytes());
+        hasher.update(b"|");
+
+        let fund_key = fund_abbr
+            .filter(|s| !s.trim().is_empty())
+            .unwrap_or(proj_id)
+            .trim()
+            .to_uppercase();
+        hasher.update(fund_key.as_bytes());
+        hasher.update(b"|");
+        hasher.update(trans_date.trim().as_bytes());
+        hasher.update(b"|");
+        hasher.update(trans_type.trim().to_uppercase().as_bytes());
+        hasher.update(b"|");
+        hasher.update(format!("{:.4}", units).as_bytes());
+        hasher.update(b"|");
+        hasher.update(format!("{:.2}", total_amount).as_bytes());
+
+        // ถ้ามีเลขอ้างอิงรายการใน note ให้ร่วมคำนวณด้วย
+        if let Some(n) = note {
+            let trimmed = n.trim();
+            if !trimmed.is_empty() {
+                hasher.update(b"|");
+                hasher.update(trimmed.as_bytes());
+            }
+        }
+
+        format!("{:x}", hasher.finalize())
+    }
 }
 
 /// สถานะการถือครองของแต่ละกองทุน (Holding Position)

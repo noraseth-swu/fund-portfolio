@@ -227,21 +227,24 @@ impl Repository {
     }
 
     /// บันทึกธุรกรรม (Transaction) ลงฐานข้อมูล สำหรับ user_id
+    /// บันทึกธุรกรรม (Transaction) ลงฐานข้อมูล สำหรับ user_id (คืนค่า true ถ้าเพิ่มสำเร็จ, false ถ้าเป็นรายการซ้ำ)
     pub async fn insert_transaction(
         pool: &DbPool,
         user_id: &str,
         tx: &Transaction,
-    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
-        sqlx::query(
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let res = sqlx::query(
             r#"
             INSERT INTO transactions (
-                id, user_id, proj_id, fund_abbr, platform, trans_type, trans_date,
+                id, user_id, idempotency_key, proj_id, fund_abbr, platform, trans_type, trans_date,
                 units, unit_price, total_amount, fee, note
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+            ON CONFLICT(user_id, idempotency_key) DO NOTHING
             "#,
         )
         .bind(&tx.id)
         .bind(user_id)
+        .bind(&tx.idempotency_key)
         .bind(&tx.proj_id)
         .bind(&tx.fund_abbr)
         .bind(tx.platform.as_str())
@@ -255,28 +258,33 @@ impl Repository {
         .execute(pool)
         .await?;
 
-        Ok(())
+        Ok(res.rows_affected() > 0)
     }
 
-    /// บันทึกรายการธุรกรรมหลายรายการพร้อมกันใน Transaction เดียว (Batch Insert)
+    /// บันทึกรายการธุรกรรมหลายรายการพร้อมกันใน Transaction เดียว (Batch Insert with Deduplication)
+    /// คืนค่า (inserted_count, skipped_count)
     pub async fn insert_transactions_batch(
         pool: &DbPool,
         user_id: &str,
         txs: &[Transaction],
-    ) -> Result<usize, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<(usize, usize), Box<dyn std::error::Error + Send + Sync>> {
         let mut conn = pool.begin().await?;
+        let mut inserted_count = 0;
+        let mut skipped_count = 0;
 
         for tx in txs {
-            sqlx::query(
+            let res = sqlx::query(
                 r#"
                 INSERT INTO transactions (
-                    id, user_id, proj_id, fund_abbr, platform, trans_type, trans_date,
+                    id, user_id, idempotency_key, proj_id, fund_abbr, platform, trans_type, trans_date,
                     units, unit_price, total_amount, fee, note
-                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12)
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13)
+                ON CONFLICT(user_id, idempotency_key) DO NOTHING
                 "#,
             )
             .bind(&tx.id)
             .bind(user_id)
+            .bind(&tx.idempotency_key)
             .bind(&tx.proj_id)
             .bind(&tx.fund_abbr)
             .bind(tx.platform.as_str())
@@ -289,10 +297,16 @@ impl Repository {
             .bind(&tx.note)
             .execute(&mut *conn)
             .await?;
+
+            if res.rows_affected() > 0 {
+                inserted_count += 1;
+            } else {
+                skipped_count += 1;
+            }
         }
 
         conn.commit().await?;
-        Ok(txs.len())
+        Ok((inserted_count, skipped_count))
     }
 
     /// ดึงรายการธุรกรรมทั้งหมดของ user_id เรียงตามวันที่
@@ -302,7 +316,7 @@ impl Repository {
     ) -> Result<Vec<Transaction>, Box<dyn std::error::Error + Send + Sync>> {
         let rows = sqlx::query(
             r#"
-            SELECT id, proj_id, fund_abbr, platform, trans_type, trans_date,
+            SELECT id, idempotency_key, proj_id, fund_abbr, platform, trans_type, trans_date,
                    units, unit_price, total_amount, fee, note
             FROM transactions
             WHERE user_id = ?1
@@ -316,6 +330,7 @@ impl Repository {
         let mut list = Vec::new();
         for row in rows {
             let id: String = row.get("id");
+            let idempotency_key: Option<String> = row.get("idempotency_key");
             let proj_id: String = row.get("proj_id");
             let fund_abbr: Option<String> = row.get("fund_abbr");
             let platform_str: String = row.get("platform");
@@ -329,6 +344,7 @@ impl Repository {
 
             list.push(Transaction {
                 id,
+                idempotency_key,
                 proj_id,
                 fund_abbr,
                 platform: Platform::from_str(&platform_str),
@@ -414,5 +430,68 @@ impl Repository {
             .await?;
 
         Ok(res.rows_affected() > 0)
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::db::init_db;
+    use crate::domain::models::{Platform, TransactionType};
+    use rust_decimal_macros::dec;
+
+    #[tokio::test]
+    async fn test_insert_transactions_batch_deduplication() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let user_id = "test_user_dedup";
+
+        let tx = Transaction {
+            id: "tx-original".to_string(),
+            idempotency_key: Some(Transaction::compute_idempotency_key(
+                user_id,
+                "TTB",
+                "M0001",
+                Some("ES-USTECH"),
+                "2023-12-28",
+                "BUY",
+                &dec!(46.0992),
+                &dec!(625.00),
+                Some("023362010997256"),
+            )),
+            proj_id: "M0001".to_string(),
+            fund_abbr: Some("ES-USTECH".to_string()),
+            platform: Platform::Ttb,
+            trans_type: TransactionType::Buy,
+            trans_date: "2023-12-28".to_string(),
+            units: dec!(46.0992),
+            unit_price: dec!(13.5577),
+            total_amount: dec!(625.00),
+            fee: dec!(0),
+            note: Some("023362010997256".to_string()),
+        };
+
+        // First insert -> (1 inserted, 0 skipped)
+        let (inserted1, skipped1) =
+            Repository::insert_transactions_batch(&pool, user_id, &[tx.clone()])
+                .await
+                .unwrap();
+        assert_eq!(inserted1, 1);
+        assert_eq!(skipped1, 0);
+
+        // Second insert of identical transaction (even with new random UUID) -> (0 inserted, 1 skipped)
+        let mut tx_duplicate = tx.clone();
+        tx_duplicate.id = "tx-new-uuid".to_string();
+        let (inserted2, skipped2) =
+            Repository::insert_transactions_batch(&pool, user_id, &[tx_duplicate])
+                .await
+                .unwrap();
+        assert_eq!(inserted2, 0);
+        assert_eq!(skipped2, 1);
+
+        // Verify total records in DB is still exactly 1
+        let all = Repository::get_all_transactions(&pool, user_id)
+            .await
+            .unwrap();
+        assert_eq!(all.len(), 1);
     }
 }

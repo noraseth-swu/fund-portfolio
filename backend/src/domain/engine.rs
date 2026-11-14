@@ -233,6 +233,7 @@ mod tests {
         // ทดสอบการซื้อเฉลี่ย 2 ครั้ง และคำนวณกำไร/ขาดทุน
         let tx1 = Transaction {
             id: "tx-1".to_string(),
+            idempotency_key: None,
             proj_id: "K-USA".to_string(),
             fund_abbr: Some("K-USA".to_string()),
             platform: super::super::models::Platform::KBank,
@@ -247,6 +248,7 @@ mod tests {
 
         let tx2 = Transaction {
             id: "tx-2".to_string(),
+            idempotency_key: None,
             proj_id: "K-USA".to_string(),
             fund_abbr: Some("K-USA".to_string()),
             platform: super::super::models::Platform::KBank,
@@ -284,6 +286,7 @@ mod tests {
         // ซื้อ 100 หน่วย @ 10 = 1,000 บาท
         let tx_buy = Transaction {
             id: "tx-buy".to_string(),
+            idempotency_key: None,
             proj_id: "SCBGOLD".to_string(),
             fund_abbr: Some("SCBGOLD".to_string()),
             platform: super::super::models::Platform::Dime,
@@ -299,6 +302,7 @@ mod tests {
         // ขาย 50 หน่วย @ 12 = 600 บาท (กำไร 100 บาท)
         let tx_sell = Transaction {
             id: "tx-sell".to_string(),
+            idempotency_key: None,
             proj_id: "SCBGOLD".to_string(),
             fund_abbr: Some("SCBGOLD".to_string()),
             platform: super::super::models::Platform::Dime,
@@ -329,6 +333,7 @@ mod tests {
     fn test_fallback_to_transaction_unit_price_when_nav_zero() {
         let tx = Transaction {
             id: "tx-fallback".to_string(),
+            idempotency_key: None,
             proj_id: "EASTSPRING-US-TECH".to_string(),
             fund_abbr: Some("EASTSPRING-US-TECH".to_string()),
             platform: super::super::models::Platform::Ttb,
@@ -350,5 +355,49 @@ mod tests {
         assert_eq!(summary.holdings[0].unrealized_pl, dec!(0.0));
         assert_eq!(summary.total_cost, dec!(625.0));
         assert_eq!(summary.market_value, dec!(625.0));
+    }
+
+    #[test]
+    fn test_compute_idempotency_key_deterministic() {
+        let key1 = Transaction::compute_idempotency_key(
+            "user_123",
+            "TTB",
+            "M0001",
+            Some("ES-USTECH"),
+            "2023-12-28",
+            "BUY",
+            &dec!(46.0992),
+            &dec!(625.00),
+            Some("023362010997256"),
+        );
+
+        let key2 = Transaction::compute_idempotency_key(
+            "user_123",
+            "ttb",
+            "m0001",
+            Some("ES-USTECH"),
+            "2023-12-28",
+            "buy",
+            &dec!(46.0992),
+            &dec!(625.0),
+            Some("023362010997256"),
+        );
+
+        // Case-insensitivity for platform & type, same reference note -> Identical hash!
+        assert_eq!(key1, key2);
+
+        // Different user -> Different hash!
+        let key3 = Transaction::compute_idempotency_key(
+            "user_999",
+            "TTB",
+            "M0001",
+            Some("ES-USTECH"),
+            "2023-12-28",
+            "BUY",
+            &dec!(46.0992),
+            &dec!(625.00),
+            Some("023362010997256"),
+        );
+        assert_ne!(key1, key3);
     }
 }

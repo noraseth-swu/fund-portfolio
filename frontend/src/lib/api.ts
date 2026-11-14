@@ -130,7 +130,7 @@ export async function createTransactionsBatch(payloads: Array<{
   unit_price: string;
   fee?: string;
   note?: string;
-}>): Promise<{ success: boolean; inserted_count: number }> {
+}>): Promise<{ success: boolean; inserted_count: number; skipped_count: number }> {
   const res = await authFetch(`${API_BASE}/transactions/batch`, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },

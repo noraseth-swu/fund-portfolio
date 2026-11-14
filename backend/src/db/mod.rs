@@ -158,10 +158,11 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             PRIMARY KEY (proj_id, nav_date)
         );
 
-        -- 3. ตารางบันทึกธุรกรรมการซื้อขายพอร์ตของผู้ใช้ (รองรับ Multi-user)
+        -- 3. ตารางบันทึกธุรกรรมการซื้อขายพอร์ตของผู้ใช้ (รองรับ Multi-user และ Idempotent Deduplication)
         CREATE TABLE IF NOT EXISTS transactions (
             id TEXT PRIMARY KEY,
             user_id TEXT NOT NULL DEFAULT 'default_user',
+            idempotency_key TEXT,
             proj_id TEXT NOT NULL,
             fund_abbr TEXT,
             platform TEXT NOT NULL,           -- 'KBANK', 'TTB', 'DIME', 'SCB', 'OTHER'
@@ -201,10 +202,22 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
     .execute(pool)
     .await;
 
+    // Migration: เพิ่มคอลัมน์ idempotency_key ถ้ายังไม่มีในฐานข้อมูลเดิม
+    let _ = sqlx::query("ALTER TABLE transactions ADD COLUMN idempotency_key TEXT")
+        .execute(pool)
+        .await;
+
     // สร้าง Index บน user_id หลังจากมั่นใจว่ามีคอลัมน์แล้ว
     let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_trans_user ON transactions(user_id)")
         .execute(pool)
         .await;
+
+    // สร้าง Unique Index บน user_id และ idempotency_key ป้องกันรายการซ้ำ
+    let _ = sqlx::query(
+        "CREATE UNIQUE INDEX IF NOT EXISTS idx_trans_idempotency ON transactions(user_id, idempotency_key)",
+    )
+    .execute(pool)
+    .await;
 
     Ok(())
 }

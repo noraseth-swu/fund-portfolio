@@ -24,7 +24,7 @@ export type { ParsedRow } from './import/types';
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onSuccess: () => void;
+  onSuccess: (res?: { inserted_count: number; skipped_count: number }) => void;
 }
 
 export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
@@ -330,8 +330,8 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
         };
       });
 
-      await createTransactionsBatch(payloads);
-      onSuccess();
+      const res = await createTransactionsBatch(payloads);
+      onSuccess(res);
       onClose();
     } catch (err: any) {
       setErrorMessage(err.message || t('saveError'));

@@ -109,6 +109,26 @@ export const App: React.FC = () => {
     }
   };
 
+  const handleImportSuccess = (result?: { inserted_count: number; skipped_count: number }) => {
+    if (result) {
+      if (result.skipped_count > 0) {
+        setSyncMessage(
+          locale === 'th'
+            ? `นำเข้าสำเร็จ ${result.inserted_count} รายการ (ข้ามรายการซ้ำ ${result.skipped_count} รายการ)`
+            : `Imported ${result.inserted_count} transactions (${result.skipped_count} duplicates skipped)`
+        );
+      } else {
+        setSyncMessage(
+          locale === 'th'
+            ? `นำเข้าข้อมูลสำเร็จ ${result.inserted_count} รายการ`
+            : `Successfully imported ${result.inserted_count} transactions`
+        );
+      }
+      setTimeout(() => setSyncMessage(null), 5000);
+    }
+    loadData();
+  };
+
   const activePlatforms = portfolio?.platforms ? Object.keys(portfolio.platforms) : [];
 
   const filteredHoldings = (portfolio?.holdings || []).filter((h) => {
@@ -585,7 +605,7 @@ export const App: React.FC = () => {
           <CsvImportModal
             isOpen={isCsvModalOpen}
             onClose={() => setIsCsvModalOpen(false)}
-            onSuccess={loadData}
+            onSuccess={handleImportSuccess}
           />
         )}
       </Suspense>
