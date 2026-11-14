@@ -827,6 +827,13 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
     except Exception:
         pass
     
+    logger.info("=" * 60)
+    logger.info("🎉 [✓] Gmail Harvest & Email Sync COMPLETED successfully!")
+    logger.info("📊 Summary: %d emails scanned | %d attachments found", total_emails_scanned, total_attachments_found)
+    logger.info("📥 Transactions: %d extracted | %d inserted | %d skipped (duplicates)", total_txs_extracted, inserted_count, skipped_count)
+    logger.info("🪙 Tokens used: %s prompt + %s candidates = %s total tokens", f"{total_prompt_tokens:,}", f"{total_candidates_tokens:,}", f"{total_tokens:,}")
+    logger.info("=" * 60)
+    
     return {
         "success": True,
         "emails_scanned": total_emails_scanned,
