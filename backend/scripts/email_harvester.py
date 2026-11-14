@@ -43,6 +43,24 @@ try:
 except Exception:
     pass
 
+def handle_uncaught_exception(exc_type, exc_value, exc_traceback):
+    logger.critical("UNCAUGHT FATAL EXCEPTION:", exc_info=(exc_type, exc_value, exc_traceback))
+
+sys.excepthook = handle_uncaught_exception
+
+def safe_float(val, default=0.0):
+    if val is None:
+        return default
+    if isinstance(val, (int, float)):
+        return float(val)
+    try:
+        cleaned = re.sub(r'[^\d.-]', '', str(val).strip())
+        if not cleaned or cleaned in ('-', '.', '-.', '--'):
+            return default
+        return float(cleaned)
+    except (ValueError, TypeError):
+        return default
+
 MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
 def decode_mime_words(s):
@@ -70,7 +88,9 @@ def decode_mime_words(s):
     return "".join(result)
 
 def compute_idempotency_key(user_id, platform, proj_id, trans_date, trans_type, units, total_amount, note=""):
-    raw = f"{user_id}|{platform}|{proj_id}|{trans_date}|{trans_type}|{float(units):.4f}|{float(total_amount):.2f}|{note or ''}"
+    u = safe_float(units)
+    amt = safe_float(total_amount)
+    raw = f"{user_id}|{platform}|{proj_id}|{trans_date}|{trans_type}|{u:.4f}|{amt:.2f}|{note or ''}"
     return hashlib.sha256(raw.encode("utf-8")).hexdigest()
 
 def generate_bank_passwords(dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5):
@@ -626,6 +646,11 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                 if filename:
                     filename = decode_mime_words(filename)
                 
+                fn_lower = filename.lower() if filename else ""
+                if any(skip_kw in fn_lower for skip_kw in ["open_account", "suittest", "fatca", "terms", "condition", "consent"]):
+                    logger.info("[%s] Skipping non-transaction administrative PDF: '%s'", broker_tag, filename)
+                    continue
+                
                 if (filename and filename.lower().endswith(".pdf")) or "attachment" in content_disposition.lower():
                     pdf_data = part.get_payload(decode=True)
                     if not pdf_data:
@@ -650,71 +675,87 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     
                     logger.info("[%s] [✓] Decrypted '%s' using password '%s'", broker_tag, filename, used_pwd or '<none>')
                     
-                    pdf_text = "\n".join(p.extract_text() or "" for p in reader.pages)
-                    if not pdf_text.strip():
-                        continue
-                    
-                    # Extract transactions: Try Regex Fast-Path first (0 Token)
-                    regex_txs, regex_ok = try_regex_parse_confirmation(pdf_text, active_broker)
-                    parse_success = True
-                    if regex_ok:
-                        logger.info("[%s] [✓] Regex Fast-Path parsed %d transactions from '%s' (0 Tokens used!)", broker_tag, len(regex_txs), filename)
-                        gemini_txs = regex_txs
-                    else:
-                        cleaned_text = clean_pdf_boilerplate(pdf_text)
-                        gemini_txs, usage, parse_success = extract_transactions_with_gemini(cleaned_text, gemini_api_key)
-                        total_prompt_tokens += usage.get("prompt_tokens", 0)
-                        total_candidates_tokens += usage.get("candidates_tokens", 0)
-                        total_tokens += usage.get("total_tokens", 0)
+                    try:
+                        pdf_text = "\n".join(p.extract_text() or "" for p in reader.pages)
+                        if not pdf_text.strip():
+                            # Record 0-tx non-text/empty PDF as processed so we don't re-read it endlessly
+                            c.execute("INSERT OR IGNORE INTO processed_attachments (file_hash, filename, tx_count) VALUES (?, ?, 0)",
+                                      (pdf_hash, filename))
+                            conn.commit()
+                            continue
+                        
+                        # Extract transactions: Try Regex Fast-Path first (0 Token)
+                        regex_txs, regex_ok = try_regex_parse_confirmation(pdf_text, active_broker)
+                        parse_success = True
+                        if regex_ok:
+                            logger.info("[%s] [✓] Regex Fast-Path parsed %d transactions from '%s' (0 Tokens used!)", broker_tag, len(regex_txs), filename)
+                            gemini_txs = regex_txs
+                        else:
+                            cleaned_text = clean_pdf_boilerplate(pdf_text)
+                            gemini_txs, usage, parse_success = extract_transactions_with_gemini(cleaned_text, gemini_api_key)
+                            total_prompt_tokens += usage.get("prompt_tokens", 0)
+                            total_candidates_tokens += usage.get("candidates_tokens", 0)
+                            total_tokens += usage.get("total_tokens", 0)
 
-                    if not parse_success:
-                        logger.error("[%s] [✗] Failed to parse '%s' via AI (rate limit or outage). Will NOT cache as processed to allow retry.", broker_tag, filename)
-                        details.append(f"AI parsing failed for {filename} (will retry next sync)")
+                        if not parse_success:
+                            logger.error("[%s] [✗] Failed to parse '%s' via AI (rate limit or outage). Will NOT cache as processed to allow retry.", broker_tag, filename)
+                            details.append(f"AI parsing failed for {filename} (will retry next sync)")
+                            email_had_error = True
+                            continue
+
+                        pdf_tx_count = 0
+                        for tx in gemini_txs:
+                            try:
+                                fcode = tx.get("fund_code", "")
+                                if not fcode or str(fcode).lower() in BLACKLISTED_NAMES:
+                                    continue
+                                proj_id, fund_abbr = match_fund_in_db(conn, fcode)
+                                if not proj_id or not fund_abbr:
+                                    logger.warning("Skipping invalid or blacklisted fund name: '%s'", fcode)
+                                    continue
+                                units = safe_float(tx.get("units"), 0.0)
+                                unit_price = safe_float(tx.get("unit_price"), 0.0)
+                                total_amount = safe_float(tx.get("total_amount"), 0.0)
+                                fee = safe_float(tx.get("fee"), 0.0)
+                                if total_amount <= 0 and units <= 0:
+                                    # Non-transactional item (e.g. account opening notification)
+                                    continue
+                                
+                                t_date = str(tx.get("trans_date") or datetime.now().strftime("%Y-%m-%d"))
+                                t_type = str(tx.get("trans_type") or "BUY").upper()
+                                platform_code = str(tx.get("platform") or active_broker).upper()
+                                note = str(tx.get("note") or f"Imported from {filename}")
+                                
+                                total_txs_extracted += 1
+                                email_tx_count += 1
+                                pdf_tx_count += 1
+                                
+                                idem_key = compute_idempotency_key(user_id, platform_code, proj_id, t_date, t_type, units, total_amount, note)
+                                import uuid
+                                tx_id = f"tx_pdf_{uuid.uuid4().hex[:12]}"
+                                c.execute("""
+                                    INSERT INTO transactions (id, user_id, idempotency_key, proj_id, fund_abbr, platform, trans_type, trans_date, units, unit_price, total_amount, fee, note)
+                                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                    ON CONFLICT(user_id, idempotency_key) DO NOTHING
+                                """, (tx_id, user_id, idem_key, proj_id, fund_abbr, platform_code, t_type, t_date, f"{units:.4f}", f"{unit_price:.4f}", f"{total_amount:.2f}", f"{fee:.2f}", note))
+                                if c.rowcount > 0:
+                                    inserted_count += 1
+                                    logger.info("[+] Inserted %s %s (%.2f THB) from %s", t_date, fund_abbr, total_amount, filename)
+                                    details.append(f"Inserted {t_date} {fund_abbr} ({total_amount:,.2f} THB) from {filename}")
+                                else:
+                                    skipped_count += 1
+                                    logger.debug("[*] Skipped duplicate %s %s from %s", t_date, fund_abbr, filename)
+                            except Exception as te:
+                                logger.error("[%s] Error inserting tx from %s: %s (tx: %s)", broker_tag, filename, te, tx)
+                        
+                        # Record PDF attachment hash into checkpoint cache
+                        c.execute("INSERT OR IGNORE INTO processed_attachments (file_hash, filename, tx_count) VALUES (?, ?, ?)",
+                                  (pdf_hash, filename, pdf_tx_count))
+                        conn.commit()
+                    except Exception as pe:
+                        logger.error("[%s] Unexpected error processing attachment '%s': %s", broker_tag, filename, pe)
                         email_had_error = True
                         continue
-
-                    pdf_tx_count = 0
-                    for tx in gemini_txs:
-                        total_txs_extracted += 1
-                        email_tx_count += 1
-                        pdf_tx_count += 1
-                        platform_code = tx.get("platform", active_broker).upper()
-                        fcode = tx.get("fund_code", "")
-                        proj_id, fund_abbr = match_fund_in_db(conn, fcode)
-                        if not proj_id or not fund_abbr:
-                            logger.warning("Skipping invalid or blacklisted fund name: '%s'", fcode)
-                            continue
-                        t_date = tx.get("trans_date", datetime.now().strftime("%Y-%m-%d"))
-                        t_type = tx.get("trans_type", "BUY").upper()
-                        units = float(tx.get("units", 0))
-                        unit_price = float(tx.get("unit_price", 0))
-                        total_amount = float(tx.get("total_amount", 0))
-                        fee = float(tx.get("fee", 0))
-                        note = tx.get("note", f"Imported from {filename}")
-                        
-                        idem_key = compute_idempotency_key(user_id, platform_code, proj_id, t_date, t_type, units, total_amount, note)
-                        import uuid
-                        tx_id = f"tx_pdf_{uuid.uuid4().hex[:12]}"
-                        try:
-                            c.execute("""
-                                INSERT INTO transactions (id, user_id, idempotency_key, proj_id, fund_abbr, platform, trans_type, trans_date, units, unit_price, total_amount, fee, note)
-                                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                                ON CONFLICT(user_id, idempotency_key) DO NOTHING
-                            """, (tx_id, user_id, idem_key, proj_id, fund_abbr, platform_code, t_type, t_date, f"{units:.4f}", f"{unit_price:.4f}", f"{total_amount:.2f}", f"{fee:.2f}", note))
-                            if c.rowcount > 0:
-                                inserted_count += 1
-                                logger.info("[+] Inserted %s %s (%.2f THB) from %s", t_date, fund_abbr, total_amount, filename)
-                                details.append(f"Inserted {t_date} {fund_abbr} ({total_amount:,.2f} THB) from {filename}")
-                            else:
-                                skipped_count += 1
-                                logger.debug("[*] Skipped duplicate %s %s from %s", t_date, fund_abbr, filename)
-                        except Exception as e:
-                            logger.error("DB insert error: %s", e)
-                    
-                    # Record PDF attachment hash into checkpoint cache
-                    c.execute("INSERT OR IGNORE INTO processed_attachments (file_hash, filename, tx_count) VALUES (?, ?, ?)",
-                              (pdf_hash, filename, pdf_tx_count))
-                    conn.commit()
 
             # Record email message_id into checkpoint cache (only if no failures occurred)
             if message_id_header and not email_had_error:
