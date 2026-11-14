@@ -302,7 +302,10 @@ Return empty array [] if no transactions found."#;
             "parts": parts
         }],
         "generationConfig": {
-            "responseMimeType": "application/json"
+            "responseMimeType": "application/json",
+            "thinkingConfig": {
+                "thinkingBudget": 0
+            }
         }
     });
 
@@ -432,10 +435,28 @@ Return empty array [] if no transactions found."#;
     };
 
     let usage = resp_json.get("usageMetadata").map(|u| {
+        let prompt_tokens = u
+            .get("promptTokenCount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let candidates_tokens = u
+            .get("candidatesTokenCount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let thoughts_tokens = u
+            .get("thoughtsTokenCount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(0);
+        let total_tokens = u
+            .get("totalTokenCount")
+            .and_then(|v| v.as_i64())
+            .unwrap_or(prompt_tokens + candidates_tokens + thoughts_tokens);
+
         serde_json::json!({
-            "prompt_tokens": u.get("promptTokenCount").and_then(|v| v.as_i64()).unwrap_or(0),
-            "candidates_tokens": u.get("candidatesTokenCount").and_then(|v| v.as_i64()).unwrap_or(0),
-            "total_tokens": u.get("totalTokenCount").and_then(|v| v.as_i64()).unwrap_or(0),
+            "prompt_tokens": prompt_tokens,
+            "candidates_tokens": candidates_tokens,
+            "thoughts_tokens": thoughts_tokens,
+            "total_tokens": total_tokens,
         })
     });
 

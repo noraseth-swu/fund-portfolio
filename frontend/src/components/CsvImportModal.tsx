@@ -8,7 +8,6 @@ import {
   FileSpreadsheet,
   FileText,
   Lock,
-  ArrowRight,
   Trash2,
   RefreshCw,
   ClipboardPaste,
@@ -525,10 +524,14 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
         {/* Error notification */}
         {errorMessage && (
-          <div className="mb-4 p-3.5 rounded-xl bg-rose-950/60 border border-rose-800 text-rose-300 text-xs flex items-center gap-2.5">
-            <AlertCircle className="w-4 h-4 shrink-0 text-rose-400" />
-            <span className="flex-1">{errorMessage}</span>
-            <button onClick={() => setErrorMessage(null)} className="text-rose-400 hover:text-rose-200">
+          <div className="mb-4 p-3.5 rounded-xl bg-rose-50 border border-rose-200 text-rose-800 dark:bg-rose-950/60 dark:border-rose-800 dark:text-rose-300 text-xs flex items-center gap-2.5 shadow-sm">
+            <AlertCircle className="w-4 h-4 shrink-0 text-rose-600 dark:text-rose-400" />
+            <span className="flex-1 font-medium">{errorMessage}</span>
+            <button
+              onClick={() => setErrorMessage(null)}
+              className="text-rose-600 dark:text-rose-400 hover:text-rose-900 dark:hover:text-rose-200 p-1 rounded-lg hover:bg-rose-100 dark:hover:bg-rose-900/40 transition cursor-pointer"
+              aria-label="Dismiss error"
+            >
               <X className="w-3.5 h-3.5" />
             </button>
           </div>
@@ -536,28 +539,32 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
         {/* Password Prompt for Encrypted PDFs */}
         {isPasswordRequired && (
-          <div className="mb-4 p-5 rounded-2xl bg-amber-950/30 border border-amber-600/50 flex flex-col gap-3">
-            <div className="flex items-center gap-2 text-amber-300 text-sm font-semibold">
-              <Lock className="w-4 h-4" />
+          <div className="mb-4 p-5 rounded-xl bg-amber-50 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-600/40 flex flex-col gap-3 shadow-sm">
+            <div className="flex items-center gap-2.5 text-amber-900 dark:text-amber-300 text-sm font-bold">
+              <div className="w-7 h-7 rounded-lg bg-amber-100 dark:bg-amber-900/60 border border-amber-300 dark:border-amber-700 flex items-center justify-center text-amber-700 dark:text-amber-300">
+                <Lock className="w-4 h-4" />
+              </div>
               <span>{t('pdfPasswordRequired')}</span>
             </div>
-            <p className="text-xs text-slate-300">{t('pdfPasswordHint')}</p>
-            <form onSubmit={handlePasswordSubmit} className="flex items-center gap-2 mt-1">
+            <p className="text-xs text-amber-800 dark:text-slate-300 leading-relaxed font-normal">
+              {t('pdfPasswordHint')}
+            </p>
+            <form onSubmit={handlePasswordSubmit} className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5 mt-1">
               <input
                 type="password"
                 placeholder={t('enterPasswordPlaceholder')}
                 value={pdfPassword}
                 onChange={(e) => setPdfPassword(e.target.value)}
                 autoFocus
-                className="flex-1 bg-slate-950 border border-slate-700 rounded-xl px-4 py-2 text-sm text-white placeholder-slate-500 focus:outline-none focus:border-amber-500"
+                className="flex-1 bg-white dark:bg-slate-950 border border-amber-300 dark:border-slate-700 rounded-xl px-4 py-2.5 text-sm text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-amber-500/40 focus:border-amber-500 font-mono shadow-sm"
               />
               <button
                 type="submit"
                 disabled={loading || !pdfPassword}
-                className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold px-4 py-2 rounded-xl text-sm transition flex items-center gap-1.5 cursor-pointer"
+                className="bg-amber-500 hover:bg-amber-400 disabled:opacity-50 text-slate-950 font-bold px-5 py-2.5 rounded-xl text-xs sm:text-sm transition flex items-center justify-center gap-2 cursor-pointer shadow-sm hover:shadow active:scale-[0.99]"
               >
+                <Lock className="w-4 h-4" />
                 <span>{t('unlockAndScan')}</span>
-                <ArrowRight className="w-4 h-4" />
               </button>
             </form>
           </div>
@@ -948,10 +955,11 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                   {t('btnCancel')}
                 </button>
                 {tokenUsage && (
-                  <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono flex items-center gap-1.5 border-l border-slate-300 dark:border-slate-700 pl-3">
+                  <span className="text-[11px] text-slate-600 dark:text-slate-400 font-mono flex items-center gap-1.5 border-l border-slate-300 dark:border-slate-700 pl-3">
                     <Activity className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400 shrink-0" />
                     <span>
-                      {t('geminiTokens')}: {tokenUsage.total_tokens.toLocaleString()} (Prompt: {tokenUsage.prompt_tokens.toLocaleString()} / Output: {tokenUsage.candidates_tokens.toLocaleString()})
+                      {t('geminiTokens')}: <span className="font-bold text-slate-900 dark:text-white">{tokenUsage.total_tokens.toLocaleString()}</span> (Prompt: {tokenUsage.prompt_tokens.toLocaleString()} / Output: {tokenUsage.candidates_tokens.toLocaleString()}
+                      {tokenUsage.thoughts_tokens && tokenUsage.thoughts_tokens > 0 ? ` / Thinking: ${tokenUsage.thoughts_tokens.toLocaleString()}` : ''})
                     </span>
                   </span>
                 )}

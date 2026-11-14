@@ -171,6 +171,7 @@ export async function triggerNavSync(): Promise<{ success: boolean; updated_fund
 export interface TokenUsage {
   prompt_tokens: number;
   candidates_tokens: number;
+  thoughts_tokens?: number;
   total_tokens: number;
 }
 
