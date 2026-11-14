@@ -29,11 +29,23 @@ MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep",
 def decode_mime_words(s):
     if not s:
         return ""
-    decoded_fragments = decode_header(s)
+    try:
+        decoded_fragments = decode_header(s)
+    except Exception:
+        return str(s)
     result = []
     for frag, enc in decoded_fragments:
         if isinstance(frag, bytes):
-            result.append(frag.decode(enc or "utf-8", errors="replace"))
+            enc_clean = (enc or "utf-8").lower().strip()
+            if enc_clean in ("windows-874", "win-874", "tis-620", "tis620", "cp874"):
+                enc_clean = "cp874"
+            try:
+                result.append(frag.decode(enc_clean, errors="replace"))
+            except Exception:
+                try:
+                    result.append(frag.decode("cp874", errors="replace"))
+                except Exception:
+                    result.append(frag.decode("utf-8", errors="replace"))
         else:
             result.append(str(frag))
     return "".join(result)
@@ -162,9 +174,15 @@ def extract_transactions_with_gemini(text_content, api_key):
     Call Gemini API to extract mutual fund transactions from unstructured text
     """
     if not api_key:
+        if os.path.exists(".env"):
+            with open(".env", "r", encoding="utf-8") as f:
+                for line in f:
+                    if line.startswith("GEMINI_API_KEY="):
+                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+    if not api_key:
         return []
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-2.5-flash:generateContent?key={api_key}"
+    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={api_key}"
     system_instruction = (
         "Extract mutual fund transactions from this bank statement or confirmation note. "
         "Return ONLY a valid JSON array of objects with keys: "
@@ -195,24 +213,35 @@ def extract_transactions_with_gemini(text_content, api_key):
         headers={"Content-Type": "application/json"}
     )
     
-    try:
-        with urllib.request.urlopen(req, timeout=30) as response:
-            res_data = json.loads(response.read().decode("utf-8"))
-            candidates = res_data.get("candidates", [])
-            if candidates:
-                text_out = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                text_out = text_out.strip()
-                if text_out.startswith("```json"):
-                    text_out = text_out[7:]
-                if text_out.endswith("```"):
-                    text_out = text_out[:-3]
-                parsed = json.loads(text_out.strip())
-                if isinstance(parsed, list):
-                    return parsed
-                elif isinstance(parsed, dict) and "transactions" in parsed:
-                    return parsed["transactions"]
-    except Exception as e:
-        print(f"[!] Gemini extraction error: {e}", file=sys.stderr)
+    import time
+    for attempt in range(3):
+        try:
+            with urllib.request.urlopen(req, timeout=35) as response:
+                res_data = json.loads(response.read().decode("utf-8"))
+                candidates = res_data.get("candidates", [])
+                if candidates:
+                    text_out = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                    text_out = text_out.strip()
+                    if text_out.startswith("```json"):
+                        text_out = text_out[7:]
+                    if text_out.endswith("```"):
+                        text_out = text_out[:-3]
+                    parsed = json.loads(text_out.strip())
+                    if isinstance(parsed, list):
+                        return parsed
+                    elif isinstance(parsed, dict) and "transactions" in parsed:
+                        return parsed["transactions"]
+            break
+        except urllib.error.HTTPError as e:
+            if e.code == 429 and attempt < 2:
+                print(f"[!] Gemini 429 rate limit reached. Waiting 5s before retry (attempt {attempt+1}/3)...", file=sys.stderr, flush=True)
+                time.sleep(5)
+                continue
+            print(f"[!] Gemini extraction error: {e}", file=sys.stderr, flush=True)
+            break
+        except Exception as e:
+            print(f"[!] Gemini extraction error: {e}", file=sys.stderr, flush=True)
+            break
     return []
 
 def match_fund_in_db(conn, fund_code):
@@ -260,12 +289,17 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
     skipped_count = 0
     details = []
     
+    print(f"[Harvester] Starting Gmail harvest for user '{user_id}'...", file=sys.stderr, flush=True)
+
     for broker_tag, sender_email in senders:
+        print(f"[Harvester] Searching for {broker_tag} emails from {sender_email}...", file=sys.stderr, flush=True)
         status, data = mail.search(None, f'(FROM "{sender_email}")')
         if status != "OK" or not data[0]:
+            print(f"[Harvester] No messages found for {broker_tag}.", file=sys.stderr, flush=True)
             continue
         
         msg_ids = data[0].split()
+        print(f"[Harvester] Found {len(msg_ids)} emails for {broker_tag}. Processing up to {max_emails} latest...", file=sys.stderr, flush=True)
         # Scan most recent emails up to max_emails
         recent_ids = msg_ids[-max_emails:] if len(msg_ids) > max_emails else msg_ids
         
@@ -278,6 +312,12 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             raw_email = msg_data[0][1]
             msg = email.message_from_bytes(raw_email)
             subject = decode_mime_words(msg.get("Subject", ""))
+            subj_lower = subject.lower()
+            if "credit card" in subj_lower or "บัตรเครดิต" in subj_lower:
+                print(f"[Harvester] [{broker_tag}] Skipping non-investment email: '{subject[:60]}'", file=sys.stderr, flush=True)
+                continue
+
+            print(f"[Harvester] [{broker_tag}] Processing email: '{subject[:60]}'...", file=sys.stderr, flush=True)
             
             # 1. Kasikorn Funds body table
             if broker_tag == "KBANK":
@@ -286,7 +326,16 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     if part.get_content_type() == "text/html":
                         payload = part.get_payload(decode=True)
                         if payload:
-                            html_body = payload.decode(part.get_content_charset() or "utf-8", errors="replace")
+                            enc = (part.get_content_charset() or "utf-8").lower().strip()
+                            if enc in ("windows-874", "win-874", "tis-620", "tis620", "cp874"):
+                                enc = "cp874"
+                            try:
+                                html_body = payload.decode(enc, errors="replace")
+                            except Exception:
+                                try:
+                                    html_body = payload.decode("cp874", errors="replace")
+                                except Exception:
+                                    html_body = payload.decode("utf-8", errors="replace")
                             break
                 if html_body:
                     txs = parse_html_table_kasikorn(html_body)
@@ -329,10 +378,14 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     active_broker = "TTB" if "ttb" in broker_tag else ("DIME" if "DIME" in broker_tag else ("SCB" if "SCB" in broker_tag else "KBANK"))
                     candidate_pwds = passwords.get(active_broker, []) + passwords.get("GENERAL", [])
                     
+                    print(f"[Harvester] Found attachment '{filename}'. Attempting decryption...", file=sys.stderr, flush=True)
                     reader, used_pwd = decrypt_pdf_bytes(pdf_data, candidate_pwds)
                     if not reader:
+                        print(f"[Harvester] [!] Decryption failed for '{filename}'", file=sys.stderr, flush=True)
                         details.append(f"Failed to decrypt {filename} from {sender_email}")
                         continue
+                    
+                    print(f"[Harvester] [✓] Decrypted '{filename}' using password '{used_pwd or '<none>'}'", file=sys.stderr, flush=True)
                     
                     pdf_text = "\n".join(p.extract_text() or "" for p in reader.pages)
                     if not pdf_text.strip():
