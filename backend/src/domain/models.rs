@@ -146,6 +146,8 @@ pub struct HoldingPosition {
     pub avg_cost: Decimal,          // ต้นทุนเฉลี่ยต่อหน่วย (บาท)
     pub total_cost: Decimal,        // ต้นทุนรวมคงเหลือ (บาท)
     pub current_nav: Decimal,       // ราคา NAV ล่าสุด
+    pub nav_date: Option<String>,   // วันที่ของราคา NAV ล่าสุด (YYYY-MM-DD)
+    pub asset_type: String,         // "FUND" (กองทุนรวม) หรือ "STOCK" (หุ้น / หุ้นต่างประเทศ)
     pub market_value: Decimal,      // มูลค่าปัจจุบัน (บาท) = total_units * current_nav
     pub unrealized_pl: Decimal,     // กำไร/ขาดทุนที่ยังไม่เกิดขึ้น (บาท) = market_value - total_cost
     pub unrealized_pl_pct: Decimal, // ผลตอบแทน % = (unrealized_pl / total_cost) * 100

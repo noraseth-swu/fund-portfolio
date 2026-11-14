@@ -24,6 +24,14 @@ import {
   Eye,
   EyeOff,
   Sliders,
+  RotateCw,
+  Search,
+  ArrowUpDown,
+  ArrowUp,
+  ArrowDown,
+  LayoutDashboard,
+  Calendar,
+  X,
 } from 'lucide-react';
 import { getPortfolio, triggerNavSync, setTokenGetter, type PortfolioSummary } from './lib/api';
 import { MetricCard } from './components/MetricCard';
@@ -32,12 +40,12 @@ import { AllocationChart } from './components/AllocationChart';
 import { useTheme } from './lib/theme';
 import { useI18n } from './lib/i18n';
 
-// React.lazy for heavy modal chunks to minimize initial bundle size
+// React.lazy for heavy modal and page chunks to minimize initial bundle size
 const TransactionModal = lazy(() =>
   import('./components/TransactionModal').then((m) => ({ default: m.TransactionModal }))
 );
-const TransactionHistoryModal = lazy(() =>
-  import('./components/TransactionHistoryModal').then((m) => ({ default: m.TransactionHistoryModal }))
+const TransactionHistoryPage = lazy(() =>
+  import('./components/TransactionHistoryPage').then((m) => ({ default: m.TransactionHistoryPage }))
 );
 const CsvImportModal = lazy(() =>
   import('./components/CsvImportModal').then((m) => ({ default: m.CsvImportModal }))
@@ -70,13 +78,23 @@ export const App: React.FC = () => {
 
   const [portfolio, setPortfolio] = useState<PortfolioSummary | null>(null);
   const [loading, setLoading] = useState(true);
+  const [isRefreshing, setIsRefreshing] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [syncMessage, setSyncMessage] = useState<string | null>(null);
   const [selectedPlatform, setSelectedPlatform] = useState<string>('ALL');
 
+  // Navigation View
+  const [activeView, setActiveView] = useState<'DASHBOARD' | 'HISTORY'>('DASHBOARD');
+  const [historyFundFilter, setHistoryFundFilter] = useState<string | null>(null);
+
+  // Asset Filter & Search & Sorting for Holdings
+  const [selectedAssetType, setSelectedAssetType] = useState<'ALL' | 'FUND' | 'STOCK'>('ALL');
+  const [holdingsSearch, setHoldingsSearch] = useState('');
+  const [holdingsSortField, setHoldingsSortField] = useState<'fund_abbr' | 'platform' | 'total_units' | 'avg_cost' | 'current_nav' | 'market_value' | 'unrealized_pl'>('market_value');
+  const [holdingsSortOrder, setHoldingsSortOrder] = useState<'asc' | 'desc'>('desc');
+
   // Modals
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
-  const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
   const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
@@ -88,6 +106,17 @@ export const App: React.FC = () => {
       console.error(e);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleManualRefresh = async () => {
+    setIsRefreshing(true);
+    try {
+      await loadData();
+      setSyncMessage(t('refreshSuccess'));
+      setTimeout(() => setSyncMessage(null), 3000);
+    } finally {
+      setTimeout(() => setIsRefreshing(false), 400);
     }
   };
 
@@ -136,10 +165,80 @@ export const App: React.FC = () => {
 
   const activePlatforms = portfolio?.platforms ? Object.keys(portfolio.platforms) : [];
 
-  const filteredHoldings = (portfolio?.holdings || []).filter((h) => {
-    if (selectedPlatform === 'ALL') return true;
-    return h.platform.toUpperCase() === selectedPlatform.toUpperCase();
-  });
+  const handleHoldingsSort = (field: typeof holdingsSortField) => {
+    if (holdingsSortField === field) {
+      setHoldingsSortOrder((prev) => (prev === 'asc' ? 'desc' : 'asc'));
+    } else {
+      setHoldingsSortField(field);
+      setHoldingsSortOrder(field === 'fund_abbr' || field === 'platform' ? 'asc' : 'desc');
+    }
+  };
+
+  const filteredHoldings = (portfolio?.holdings || [])
+    .filter((h) => {
+      // Platform filter
+      if (selectedPlatform !== 'ALL' && h.platform.toUpperCase() !== selectedPlatform.toUpperCase()) {
+        return false;
+      }
+      // Asset class filter
+      if (selectedAssetType === 'FUND' && h.asset_type === 'STOCK') {
+        return false;
+      }
+      if (selectedAssetType === 'STOCK' && h.asset_type !== 'STOCK') {
+        return false;
+      }
+      // Search filter
+      if (holdingsSearch.trim()) {
+        const q = holdingsSearch.toLowerCase().trim();
+        const abbr = (h.fund_abbr || '').toLowerCase();
+        const name = (h.fund_name_th || '').toLowerCase();
+        const proj = (h.proj_id || '').toLowerCase();
+        return abbr.includes(q) || name.includes(q) || proj.includes(q);
+      }
+      return true;
+    })
+    .sort((a, b) => {
+      let aVal: string | number = '';
+      let bVal: string | number = '';
+
+      switch (holdingsSortField) {
+        case 'fund_abbr':
+          aVal = (a.fund_abbr || a.proj_id).toLowerCase();
+          bVal = (b.fund_abbr || b.proj_id).toLowerCase();
+          break;
+        case 'platform':
+          aVal = a.platform.toLowerCase();
+          bVal = b.platform.toLowerCase();
+          break;
+        case 'total_units':
+          aVal = parseFloat(a.total_units) || 0;
+          bVal = parseFloat(b.total_units) || 0;
+          break;
+        case 'avg_cost':
+          aVal = parseFloat(a.avg_cost) || 0;
+          bVal = parseFloat(b.avg_cost) || 0;
+          break;
+        case 'current_nav':
+          aVal = parseFloat(a.current_nav) || 0;
+          bVal = parseFloat(b.current_nav) || 0;
+          break;
+        case 'market_value':
+          aVal = parseFloat(a.market_value) || 0;
+          bVal = parseFloat(b.market_value) || 0;
+          break;
+        case 'unrealized_pl':
+          aVal = parseFloat(a.unrealized_pl) || 0;
+          bVal = parseFloat(b.unrealized_pl) || 0;
+          break;
+      }
+
+      if (typeof aVal === 'number' && typeof bVal === 'number') {
+        return holdingsSortOrder === 'asc' ? aVal - bVal : bVal - aVal;
+      }
+      return holdingsSortOrder === 'asc'
+        ? String(aVal).localeCompare(String(bVal))
+        : String(bVal).localeCompare(String(aVal));
+    });
 
   const [isPrivacyMode, setIsPrivacyMode] = useState<boolean>(() => {
     return localStorage.getItem('fund_portfolio_privacy_mode') === 'true';
@@ -164,6 +263,22 @@ export const App: React.FC = () => {
   const formatDisplayMoney = (val?: string) => {
     if (isPrivacyMode) return '******';
     return formatMoney(val);
+  };
+
+  const formatNavDate = (dStr?: string) => {
+    if (!dStr) return '';
+    const parts = dStr.split('-');
+    if (parts.length === 3) {
+      const [y, m, d] = parts;
+      if (locale === 'th') {
+        const beYear = (parseInt(y, 10) + 543).toString().slice(-2);
+        const mNames = ['ม.ค.', 'ก.พ.', 'มี.ค.', 'เม.ย.', 'พ.ค.', 'มิ.ย.', 'ก.ค.', 'ส.ค.', 'ก.ย.', 'ต.ค.', 'พ.ย.', 'ธ.ค.'];
+        const mThai = mNames[parseInt(m, 10) - 1] || m;
+        return `${parseInt(d, 10)} ${mThai} ${beYear}`;
+      }
+      return `${d}/${m}/${y}`;
+    }
+    return dStr;
   };
 
   const getUnrealizedTrend = (val?: string) => {
@@ -314,6 +429,47 @@ export const App: React.FC = () => {
               </span>
             </button>
 
+            {/* View Switcher: Dashboard vs History */}
+            <div className="hidden md:flex items-center bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-0.5 text-xs mr-1">
+              <button
+                onClick={() => {
+                  setActiveView('DASHBOARD');
+                  setHistoryFundFilter(null);
+                }}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                  activeView === 'DASHBOARD'
+                    ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <LayoutDashboard className="w-3.5 h-3.5" />
+                <span>{t('navDashboard')}</span>
+              </button>
+              <button
+                onClick={() => setActiveView('HISTORY')}
+                className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                  activeView === 'HISTORY'
+                    ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
+                }`}
+              >
+                <Calendar className="w-3.5 h-3.5" />
+                <span>{t('navHistory')}</span>
+              </button>
+            </div>
+
+            {/* Manual Dashboard Refresh Button */}
+            <button
+              onClick={handleManualRefresh}
+              disabled={isRefreshing || loading}
+              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              title={t('refresh')}
+              aria-label={t('refresh')}
+            >
+              <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-400' : 'text-slate-400'}`} />
+              <span className="hidden lg:inline">{isRefreshing ? t('refreshing') : t('refresh')}</span>
+            </button>
+
             {/* Sync NAV button */}
             <button
               onClick={handleSyncNav}
@@ -334,13 +490,23 @@ export const App: React.FC = () => {
               <span className="hidden sm:inline">{t('importData')}</span>
             </button>
 
-            {/* History button */}
+            {/* History Full-Page Switch Button (Mobile / Quick Toggle) */}
             <button
-              onClick={() => setIsHistoryModalOpen(true)}
-              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              onClick={() => {
+                if (activeView === 'DASHBOARD') {
+                  setActiveView('HISTORY');
+                } else {
+                  setActiveView('DASHBOARD');
+                  setHistoryFundFilter(null);
+                }
+              }}
+              className={`md:hidden px-2.5 py-2 rounded-xl border text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
+                activeView === 'HISTORY'
+                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
+                  : 'btn-header-secondary bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700/60'
+              }`}
             >
               <History className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{t('transHistory')}</span>
             </button>
 
             {/* Settings & Gmail Auto-Sync */}
@@ -378,10 +544,21 @@ export const App: React.FC = () => {
         </div>
       )}
 
-      {/* Main Dashboard Content */}
+      {/* Main Content: Dashboard or Full-Page Transaction History */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {loading ? (
           <DashboardSkeleton />
+        ) : activeView === 'HISTORY' ? (
+          <Suspense fallback={<DashboardSkeleton />}>
+            <TransactionHistoryPage
+              initialFundFilter={historyFundFilter}
+              onBack={() => {
+                setActiveView('DASHBOARD');
+                setHistoryFundFilter(null);
+              }}
+              onDataChanged={loadData}
+            />
+          </Suspense>
         ) : (
           <>
             {/* Greeting banner */}
@@ -502,25 +679,87 @@ export const App: React.FC = () => {
             </div>
 
             <div className="bg-white dark:bg-slate-900/80 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
-                <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
-                  <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> {t('holdingsTitle')}
-                </h3>
+              <div className="flex flex-col lg:flex-row lg:items-center justify-between gap-4">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-800 dark:text-slate-200 flex items-center gap-2">
+                    <Layers className="w-4 h-4 text-indigo-600 dark:text-indigo-400" /> {t('holdingsTitle')}
+                  </h3>
+                  <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
+                    {filteredHoldings.length} {locale === 'th' ? 'รายการ' : 'holdings'}
+                  </p>
+                </div>
 
-                <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs filter-tabs-container">
-                  {['ALL', ...activePlatforms].map((tab) => (
+                <div className="flex flex-wrap items-center gap-2">
+                  {/* Asset Class Filter */}
+                  <div className="flex items-center p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs">
                     <button
-                      key={tab}
-                      onClick={() => setSelectedPlatform(tab)}
+                      onClick={() => setSelectedAssetType('ALL')}
                       className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
-                        selectedPlatform === tab
-                          ? 'bg-indigo-600 text-white shadow-sm tab-btn-active'
-                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 tab-btn-inactive'
+                        selectedAssetType === 'ALL'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
                       }`}
                     >
-                      {tab === 'ALL' ? t('allPlatforms') : tab}
+                      {t('allAssets')}
                     </button>
-                  ))}
+                    <button
+                      onClick={() => setSelectedAssetType('FUND')}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                        selectedAssetType === 'FUND'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {t('mutualFunds')}
+                    </button>
+                    <button
+                      onClick={() => setSelectedAssetType('STOCK')}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                        selectedAssetType === 'STOCK'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {t('stocks')}
+                    </button>
+                  </div>
+
+                  {/* Platform Filter */}
+                  <div className="flex flex-wrap items-center gap-1.5 p-1 bg-slate-100 dark:bg-slate-950 rounded-xl border border-slate-200 dark:border-slate-800 text-xs filter-tabs-container">
+                    {['ALL', ...activePlatforms].map((tab) => (
+                      <button
+                        key={tab}
+                        onClick={() => setSelectedPlatform(tab)}
+                        className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                          selectedPlatform === tab
+                            ? 'bg-indigo-600 text-white shadow-sm tab-btn-active'
+                            : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200 tab-btn-inactive'
+                        }`}
+                      >
+                        {tab === 'ALL' ? t('allPlatforms') : tab}
+                      </button>
+                    ))}
+                  </div>
+
+                  {/* Fund Search */}
+                  <div className="relative min-w-[200px]">
+                    <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-1/2 -translate-y-1/2" />
+                    <input
+                      type="text"
+                      placeholder={locale === 'th' ? 'ค้นหากองทุน/สินทรัพย์...' : 'Search asset / fund...'}
+                      value={holdingsSearch}
+                      onChange={(e) => setHoldingsSearch(e.target.value)}
+                      className="w-full pl-8 pr-7 py-1.5 rounded-xl text-xs bg-slate-50 dark:bg-slate-950 border border-slate-200 dark:border-slate-800 text-slate-900 dark:text-white placeholder-slate-400 focus:outline-none focus:ring-2 focus:ring-indigo-500/30"
+                    />
+                    {holdingsSearch && (
+                      <button
+                        onClick={() => setHoldingsSearch('')}
+                        className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                      >
+                        <X className="w-3.5 h-3.5" />
+                      </button>
+                    )}
+                  </div>
                 </div>
               </div>
 
@@ -529,19 +768,104 @@ export const App: React.FC = () => {
                 <table className="w-full text-left text-xs sm:text-sm">
                   <thead className="bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-800 font-bold select-none">
                     <tr>
-                      <th className="py-3 px-4">{t('fundHeader')}</th>
-                      <th className="py-3 px-4">{t('platformHeader')}</th>
-                      <th className="py-3 px-4 text-right">{t('unitsHeader')}</th>
-                      <th className="py-3 px-4 text-right">{t('avgCostHeader')}</th>
-                      <th className="py-3 px-4 text-right">{t('navHeader')}</th>
-                      <th className="py-3 px-4 text-right">{t('marketValHeader')}</th>
-                      <th className="py-3 px-4 text-right">{t('plHeader')}</th>
+                      <th
+                        onClick={() => handleHoldingsSort('fund_abbr')}
+                        className="py-3 px-4 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center">
+                          {t('fundHeader')}
+                          {holdingsSortField === 'fund_abbr' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleHoldingsSort('platform')}
+                        className="py-3 px-4 cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center">
+                          {t('platformHeader')}
+                          {holdingsSortField === 'platform' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleHoldingsSort('total_units')}
+                        className="py-3 px-4 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center justify-end w-full">
+                          {t('unitsHeader')}
+                          {holdingsSortField === 'total_units' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleHoldingsSort('avg_cost')}
+                        className="py-3 px-4 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center justify-end w-full">
+                          {t('avgCostHeader')}
+                          {holdingsSortField === 'avg_cost' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleHoldingsSort('current_nav')}
+                        className="py-3 px-4 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center justify-end w-full">
+                          {t('navHeader')}
+                          {holdingsSortField === 'current_nav' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleHoldingsSort('market_value')}
+                        className="py-3 px-4 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center justify-end w-full">
+                          {t('marketValHeader')}
+                          {holdingsSortField === 'market_value' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th
+                        onClick={() => handleHoldingsSort('unrealized_pl')}
+                        className="py-3 px-4 text-right cursor-pointer hover:text-indigo-600 dark:hover:text-indigo-400 transition"
+                      >
+                        <span className="inline-flex items-center justify-end w-full">
+                          {t('plHeader')}
+                          {holdingsSortField === 'unrealized_pl' ? (
+                            holdingsSortOrder === 'asc' ? <ArrowUp className="w-3 h-3 ml-1 text-indigo-500" /> : <ArrowDown className="w-3 h-3 ml-1 text-indigo-500" />
+                          ) : (
+                            <ArrowUpDown className="w-3 h-3 ml-1 text-slate-400 opacity-40" />
+                          )}
+                        </span>
+                      </th>
+                      <th className="py-3 px-4 text-center w-16">{t('viewHistory')}</th>
                     </tr>
                   </thead>
                   <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 text-slate-800 dark:text-slate-200">
                     {filteredHoldings.length === 0 ? (
                       <tr>
-                        <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
+                        <td colSpan={8} className="py-8 text-center text-slate-500 text-xs">
                           {t('noHoldings')}
                         </td>
                       </tr>
@@ -553,7 +877,14 @@ export const App: React.FC = () => {
                         return (
                           <tr key={`${h.proj_id}-${h.platform}-${i}`} className="hover:bg-indigo-50/40 dark:hover:bg-slate-800/30 transition">
                             <td className="py-3.5 px-4 whitespace-nowrap">
-                              <span className="font-bold text-slate-900 dark:text-white block">{h.fund_abbr}</span>
+                              <div className="flex items-center gap-1.5">
+                                <span className="font-bold text-slate-900 dark:text-white block">{h.fund_abbr}</span>
+                                {h.asset_type === 'STOCK' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-amber-100 dark:bg-amber-950/80 text-amber-800 dark:text-amber-400 border border-amber-300 dark:border-amber-800">
+                                    {locale === 'th' ? 'หุ้น' : 'Stock'}
+                                  </span>
+                                )}
+                              </div>
                               <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate max-w-xs" title={h.fund_name_th || h.proj_id}>
                                 {h.fund_name_th || h.proj_id}
                               </span>
@@ -570,7 +901,12 @@ export const App: React.FC = () => {
                               {isPrivacyMode ? '******' : parseFloat(h.avg_cost).toFixed(4)}
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-bold">
-                              {parseFloat(h.current_nav).toFixed(4)}
+                              <div>{parseFloat(h.current_nav).toFixed(4)}</div>
+                              {h.nav_date && (
+                                <div className="text-[10px] font-normal text-slate-500 dark:text-slate-400">
+                                  ({formatNavDate(h.nav_date)})
+                                </div>
+                              )}
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
                               {formatDisplayMoney(h.market_value)}
@@ -587,6 +923,18 @@ export const App: React.FC = () => {
                                 {isPos ? '+' : ''}
                                 {h.unrealized_pl_pct}%
                               </span>
+                            </td>
+                            <td className="py-3.5 px-4 text-center">
+                              <button
+                                onClick={() => {
+                                  setHistoryFundFilter(h.fund_abbr);
+                                  setActiveView('HISTORY');
+                                }}
+                                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                                title={t('viewHistory')}
+                              >
+                                <History className="w-4 h-4" />
+                              </button>
                             </td>
                           </tr>
                         );
@@ -607,13 +955,6 @@ export const App: React.FC = () => {
             isOpen={isAddModalOpen}
             onClose={() => setIsAddModalOpen(false)}
             onSuccess={loadData}
-          />
-        )}
-        {isHistoryModalOpen && (
-          <TransactionHistoryModal
-            isOpen={isHistoryModalOpen}
-            onClose={() => setIsHistoryModalOpen(false)}
-            onChanged={loadData}
           />
         )}
         {isCsvModalOpen && (

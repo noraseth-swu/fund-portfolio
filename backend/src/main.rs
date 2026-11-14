@@ -16,15 +16,25 @@ use sync::SyncService;
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
 
-    println!("============================================================");
-    println!("  Fund Portfolio Management - High Performance API Server   ");
-    println!("============================================================");
+    // 0. Initialise Tracing Subscriber (Structured Logging by Level: DEBUG, INFO, WARN, ERROR)
+    tracing_subscriber::fmt()
+        .with_env_filter(
+            tracing_subscriber::EnvFilter::try_from_default_env()
+                .unwrap_or_else(|_| "backend=info,tower_http=info".into()),
+        )
+        .with_target(false)
+        .compact()
+        .init();
+
+    tracing::info!("============================================================");
+    tracing::info!("  Fund Portfolio Management - High Performance API Server   ");
+    tracing::info!("============================================================");
 
     // 1. Initialise SQLite Database (WAL mode)
     let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:portfolio.db".to_string());
-    println!("[+] Initializing SQLite Database ({db_url}) with WAL Mode...");
+    tracing::info!("[+] Initializing SQLite Database ({db_url}) with WAL Mode...");
     let pool = init_db(&db_url).await?;
-    println!("[✓] SQLite Connection Pool ready.");
+    tracing::info!("[✓] SQLite Connection Pool ready.");
 
     let api_key = env::var("SEC_API_KEY").unwrap_or_default();
 
@@ -35,7 +45,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Sync AMCs จาก SEC
         if let Ok(amcs) = sec_client.get_amc_list().await {
             let _ = Repository::upsert_amc_brokers(&pool, &amcs).await;
-            println!(
+            tracing::info!(
                 "[✓] Synced {} AMCs from SEC into Brokers Master Data.",
                 amcs.len()
             );
@@ -43,16 +53,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
 
         let funds_exist = Repository::search_funds(&pool, "", 1).await?.len();
         if funds_exist == 0 {
-            println!("[+] Performing initial fund profile seed from SEC Open API (v2)...");
+            tracing::info!("[+] Performing initial fund profile seed from SEC Open API (v2)...");
             match sec_client.get_fund_profiles(None).await {
                 Ok(paged) => {
                     Repository::upsert_funds(&pool, &paged.items).await?;
-                    println!(
+                    tracing::info!(
                         "[✓] Cached initial {} fund profiles to SQLite.",
                         paged.items.len()
                     );
                 }
-                Err(e) => eprintln!("[!] Initial fund seed skipped: {e}"),
+                Err(e) => tracing::warn!("[!] Initial fund seed skipped: {e}"),
             }
         }
     }
@@ -64,9 +74,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 4. Create Axum Router & App State
     let gemini_api_key = env::var("GEMINI_API_KEY").unwrap_or_default();
     if !gemini_api_key.is_empty() {
-        println!("[✓] Gemini AI Statement Parser is configured and active.");
+        tracing::info!("[✓] Gemini AI Statement Parser is configured and active.");
     } else {
-        println!("[!] GEMINI_API_KEY is not set. PDF AI Statement Parser will be disabled.");
+        tracing::warn!("[!] GEMINI_API_KEY is not set. PDF AI Statement Parser will be disabled.");
     }
 
     let app_state = Arc::new(AppState {
@@ -79,19 +89,19 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 5. Start Web Server
     let port = env::var("SERVER_PORT").unwrap_or_else(|_| "8080".to_string());
     let addr = format!("0.0.0.0:{}", port);
-    println!("[+] Binding HTTP Server on http://{}...", addr);
+    tracing::info!("[+] Binding HTTP Server on http://{}...", addr);
     let listener = tokio::net::TcpListener::bind(&addr).await?;
-    println!("[✓] Server is ready to receive requests!");
-    println!("    • Health check:  http://localhost:{}/api/health", port);
-    println!(
+    tracing::info!("[✓] Server is ready to receive requests!");
+    tracing::info!("    • Health check:  http://localhost:{}/api/health", port);
+    tracing::info!(
         "    • Portfolio API: http://localhost:{}/api/portfolio",
         port
     );
-    println!(
+    tracing::info!(
         "    • Transactions:  http://localhost:{}/api/transactions",
         port
     );
-    println!(
+    tracing::info!(
         "    • Fund Search:   http://localhost:{}/api/funds/search?q=K-USA",
         port
     );

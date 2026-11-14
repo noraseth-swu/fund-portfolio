@@ -6,14 +6,18 @@ use std::collections::HashMap;
 
 pub struct CalculationEngine;
 
+/// ข้อมูล NAV ล่าสุด: (Fund Abbr, Fund Name TH, NAV, NAV Date YYYY-MM-DD)
+pub type NavInfo = (String, Option<String>, Decimal, Option<String>);
+pub type NavMap = HashMap<String, NavInfo>;
+
 impl CalculationEngine {
     /// คำนวณสรุปพอร์ตการลงทุนจากประวัติธุรกรรมทั้งหมดและราคา NAV ล่าสุด
     ///
     /// - `transactions`: รายการธุรกรรมทั้งหมด (เรียงตามวันที่เก่า -> ใหม่)
-    /// - `nav_map`: Mapping จาก proj_id -> (Fund Abbr, Fund Name TH, Latest NAV)
+    /// - `nav_map`: Mapping จาก proj_id -> (Fund Abbr, Fund Name TH, Latest NAV, Latest NAV Date)
     pub fn calculate_portfolio(
         mut transactions: Vec<Transaction>,
-        nav_map: &HashMap<String, (String, Option<String>, Decimal)>,
+        nav_map: &NavMap,
     ) -> PortfolioSummary {
         // เรียงลำดับธุรกรรมตามวันที่ (เก่าไปใหม่) เพื่อให้การคำนวณ Cost Basis ถูกต้อง
         transactions.sort_by(|a, b| a.trans_date.cmp(&b.trans_date));
@@ -37,11 +41,12 @@ impl CalculationEngine {
             let platform_str = tx.platform.as_str().to_string();
             let key = (tx.proj_id.clone(), platform_str.clone());
 
-            let (abbr, name_th, _) = nav_map.get(&tx.proj_id).cloned().unwrap_or_else(|| {
+            let (abbr, name_th, _, _) = nav_map.get(&tx.proj_id).cloned().unwrap_or_else(|| {
                 (
                     tx.fund_abbr.clone().unwrap_or_else(|| tx.proj_id.clone()),
                     None,
                     Decimal::ZERO,
+                    None,
                 )
             });
 
@@ -103,10 +108,10 @@ impl CalculationEngine {
         let mut platform_groups: HashMap<String, (Decimal, Decimal, Decimal)> = HashMap::new(); // (cost, market_val, realized)
 
         for (_, tracker) in trackers {
-            let mut current_nav = nav_map
+            let (mut current_nav, nav_date) = nav_map
                 .get(&tracker.proj_id)
-                .map(|(_, _, nav)| *nav)
-                .unwrap_or(Decimal::ZERO);
+                .map(|(_, _, nav, date)| (*nav, date.clone()))
+                .unwrap_or((Decimal::ZERO, None));
 
             // Fallback: หากยังไม่มีข้อมูล NAV ล่าสุดจาก SEC ให้ใช้ราคาต่อหน่วยล่าสุดจากธุรกรรม หรือต้นทุนเฉลี่ย
             if current_nav <= Decimal::ZERO {
@@ -153,15 +158,37 @@ impl CalculationEngine {
 
             // แสดงเฉพาะรายการที่ยังมีหน่วยลงทุน หรือมี Realized P/L
             if tracker.units > Decimal::ZERO || tracker.realized_pl != Decimal::ZERO {
+                let is_stock = tracker.proj_id == "NVDA"
+                    || tracker.fund_abbr.to_uppercase() == "NVDA"
+                    || (!tracker.proj_id.starts_with('M')
+                        && tracker.platform == "DIME"
+                        && tracker.fund_abbr.len() <= 5
+                        && tracker.fund_abbr.chars().all(|c| c.is_ascii_alphabetic()))
+                    || (tracker.platform == "DIME"
+                        && (tracker.fund_abbr == "K-USA(UH)" || tracker.fund_abbr == "M-MINVOL"));
+                let asset_type = if is_stock {
+                    "STOCK".to_string()
+                } else {
+                    "FUND".to_string()
+                };
+
+                let fund_name_th = if is_stock && tracker.fund_name_th.is_none() {
+                    Some(format!("หุ้นสหรัฐฯ ({})", tracker.fund_abbr))
+                } else {
+                    tracker.fund_name_th
+                };
+
                 holdings.push(HoldingPosition {
                     proj_id: tracker.proj_id,
                     fund_abbr: tracker.fund_abbr,
-                    fund_name_th: tracker.fund_name_th,
+                    fund_name_th,
                     platform: tracker.platform,
                     total_units: tracker.units.round_dp(4),
                     avg_cost,
                     total_cost: tracker.total_cost.round_dp(2),
                     current_nav,
+                    nav_date,
+                    asset_type,
                     market_value,
                     unrealized_pl: unrealized_pl.round_dp(2),
                     unrealized_pl_pct,
@@ -269,6 +296,7 @@ mod tests {
                 "K-USA".to_string(),
                 Some("กองทุนเค ยูเอสเอ".to_string()),
                 dec!(15.0),
+                Some("2026-01-28".to_string()),
             ),
         );
 
@@ -318,7 +346,12 @@ mod tests {
         let mut nav_map = HashMap::new();
         nav_map.insert(
             "SCBGOLD".to_string(),
-            ("SCBGOLD".to_string(), None, dec!(13.0)),
+            (
+                "SCBGOLD".to_string(),
+                None,
+                dec!(13.0),
+                Some("2026-02-01".to_string()),
+            ),
         );
 
         let summary = CalculationEngine::calculate_portfolio(vec![tx_buy, tx_sell], &nav_map);

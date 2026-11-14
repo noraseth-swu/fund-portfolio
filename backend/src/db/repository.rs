@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use super::DbPool;
-use crate::domain::{Platform, Transaction, TransactionType, UserSettings};
+use crate::domain::{NavMap, Platform, Transaction, TransactionType, UserSettings};
 use crate::sec::models::{DailyNavInfo, FundProfile};
 use rust_decimal::Decimal;
 use sqlx::Row;
@@ -175,10 +175,7 @@ impl Repository {
     pub async fn get_latest_nav_map(
         pool: &DbPool,
         user_id: &str,
-    ) -> Result<
-        HashMap<String, (String, Option<String>, Decimal)>,
-        Box<dyn std::error::Error + Send + Sync>,
-    > {
+    ) -> Result<NavMap, Box<dyn std::error::Error + Send + Sync>> {
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -208,7 +205,26 @@ impl Repository {
                         LIMIT 1
                     ),
                     '0'
-                ) AS last_nav
+                ) AS last_nav,
+                COALESCE(
+                    (
+                        SELECT nav_date
+                        FROM fund_nav_history
+                        WHERE proj_id = t.proj_id
+                          AND ((nav IS NOT NULL AND nav != 'None' AND nav != '' AND nav != '0')
+                            OR (buy_price IS NOT NULL AND buy_price != 'None' AND buy_price != '' AND buy_price != '0'))
+                        ORDER BY nav_date DESC
+                        LIMIT 1
+                    ),
+                    (SELECT last_nav_date FROM funds WHERE (proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id)) AND last_nav_date IS NOT NULL LIMIT 1),
+                    (
+                        SELECT trans_date
+                        FROM transactions
+                        WHERE user_id = ?1 AND proj_id = t.proj_id AND unit_price > 0
+                        ORDER BY trans_date DESC, rowid DESC
+                        LIMIT 1
+                    )
+                ) AS last_nav_date
             FROM (SELECT proj_id, MAX(fund_abbr) AS fund_abbr FROM transactions WHERE user_id = ?1 GROUP BY proj_id) t
             "#,
         )
@@ -222,13 +238,14 @@ impl Repository {
             let abbr: Option<String> = row.get("proj_abbr_name");
             let name_th: Option<String> = row.get("proj_name_th");
             let last_nav_str: Option<String> = row.get("last_nav");
+            let nav_date: Option<String> = row.get("last_nav_date");
 
             let nav = last_nav_str
                 .and_then(|s| Decimal::from_str(&s).ok())
                 .unwrap_or(Decimal::ZERO);
 
             let fund_abbr = abbr.unwrap_or_else(|| proj_id.clone());
-            map.insert(proj_id, (fund_abbr, name_th, nav));
+            map.insert(proj_id, (fund_abbr, name_th, nav, nav_date));
         }
 
         Ok(map)
@@ -438,6 +455,31 @@ impl Repository {
             .await?;
 
         Ok(res.rows_affected() > 0)
+    }
+
+    /// ลบรายการธุรกรรมหลายรายการพร้อมกันในคราวเดียวสำหรับ user_id
+    pub async fn delete_transactions_bulk(
+        pool: &DbPool,
+        user_id: &str,
+        ids: &[String],
+    ) -> Result<u64, Box<dyn std::error::Error + Send + Sync>> {
+        if ids.is_empty() {
+            return Ok(0);
+        }
+
+        let mut tx = pool.begin().await?;
+        let mut total_deleted = 0;
+        for id in ids {
+            let res = sqlx::query("DELETE FROM transactions WHERE id = ?1 AND user_id = ?2")
+                .bind(id)
+                .bind(user_id)
+                .execute(&mut *tx)
+                .await?;
+            total_deleted += res.rows_affected();
+        }
+        tx.commit().await?;
+
+        Ok(total_deleted)
     }
 
     /// ดึงการตั้งค่าของผู้ใช้

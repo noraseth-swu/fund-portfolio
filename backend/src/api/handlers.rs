@@ -220,6 +220,29 @@ pub async fn delete_transaction(
     }
 }
 
+#[derive(Debug, Deserialize)]
+pub struct BulkDeletePayload {
+    pub ids: Vec<String>,
+}
+
+/// POST /api/transactions/bulk-delete
+/// ลบรายการธุรกรรมหลายรายการพร้อมกันในคราวเดียว
+pub async fn bulk_delete_transactions(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<BulkDeletePayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let count = Repository::delete_transactions_bulk(&state.pool, &auth.user_id, &payload.ids)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({
+        "success": true,
+        "deleted_count": count,
+        "message": format!("Deleted {} transactions", count)
+    })))
+}
+
 /// GET /api/funds/search?q=...
 /// ค้นหารายชื่อกองทุนจากฐานข้อมูลภายใน (Public/Global catalog)
 pub async fn search_funds(

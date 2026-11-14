@@ -10,6 +10,7 @@ use std::path::Path;
 use std::sync::Arc;
 use tower_http::cors::{Any, CorsLayer};
 use tower_http::services::{ServeDir, ServeFile};
+use tower_http::trace::TraceLayer;
 
 pub struct AppState {
     pub pool: DbPool,
@@ -40,6 +41,10 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(handlers::create_transactions_batch),
         )
         .route(
+            "/api/transactions/bulk-delete",
+            post(handlers::bulk_delete_transactions),
+        )
+        .route(
             "/api/transactions/{id}",
             delete(handlers::delete_transaction),
         )
@@ -59,6 +64,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             post(handlers::test_email_connection),
         )
         .route("/api/email/sync", post(handlers::sync_email_statements))
+        .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);
 

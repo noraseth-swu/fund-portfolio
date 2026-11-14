@@ -477,6 +477,22 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <span className="font-bold">{syncResult.transactions_skipped}</span>
                 </div>
               </div>
+
+              {syncResult.tokens_used && syncResult.tokens_used.total_tokens > 0 && (
+                <div className="flex flex-wrap items-center justify-between bg-indigo-950/60 border border-indigo-700/50 rounded-lg px-3 py-2 text-xs text-indigo-200 gap-1.5">
+                  <div className="flex items-center gap-1.5">
+                    <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
+                    <span>Gemini AI Token ที่ใช้:</span>
+                  </div>
+                  <div className="font-mono font-bold text-white">
+                    {syncResult.tokens_used.total_tokens.toLocaleString()}{' '}
+                    <span className="font-normal text-[11px] text-indigo-300">
+                      (Prompt: {syncResult.tokens_used.prompt_tokens.toLocaleString()} / Output: {syncResult.tokens_used.candidates_tokens.toLocaleString()})
+                    </span>
+                  </div>
+                </div>
+              )}
+
               {syncResult.details && syncResult.details.length > 0 && (
                 <div className="pt-2 max-h-36 overflow-y-auto space-y-1 text-[11px] font-mono text-slate-300">
                   {syncResult.details.map((d, i) => (

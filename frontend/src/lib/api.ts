@@ -7,6 +7,8 @@ export interface HoldingPosition {
   avg_cost: string;
   total_cost: string;
   current_nav: string;
+  nav_date?: string;
+  asset_type?: 'FUND' | 'STOCK';
   market_value: string;
   unrealized_pl: string;
   unrealized_pl_pct: string;
@@ -148,6 +150,16 @@ export async function deleteTransaction(id: string): Promise<boolean> {
   return true;
 }
 
+export async function bulkDeleteTransactions(ids: string[]): Promise<{ success: boolean; deleted_count: number }> {
+  const res = await authFetch(`${API_BASE}/transactions/bulk-delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) throw new Error('Failed to bulk delete transactions');
+  return res.json();
+}
+
 export async function searchFunds(q: string): Promise<FundSearchResult[]> {
   const res = await authFetch(`${API_BASE}/funds/search?q=${encodeURIComponent(q)}&limit=15`);
   if (!res.ok) throw new Error('Failed to search funds');
@@ -235,6 +247,7 @@ export interface EmailSyncResult {
   transactions_extracted: number;
   transactions_inserted: number;
   transactions_skipped: number;
+  tokens_used?: TokenUsage;
   details: string[];
   error?: string;
 }

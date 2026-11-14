@@ -20,9 +20,18 @@ import email
 from email.header import decode_header
 import sqlite3
 import argparse
+import logging
 from datetime import datetime
 import urllib.request
 import urllib.error
+
+# Structured Logging by Level (Observability & Production Standard)
+logging.basicConfig(
+    level=logging.INFO,
+    format="%(asctime)s [%(levelname)s] %(message)s",
+    datefmt="%Y-%m-%d %H:%M:%S"
+)
+logger = logging.getLogger("email_harvester")
 
 MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -144,9 +153,22 @@ def parse_html_table_kasikorn(html_body):
                     y_int -= 543
                 trans_date = f"{y_int:04d}-{int(m):02d}-{int(d):02d}"
                 
-                # Fund code is usually the first or second cell
-                fund_code = cells[0] if not re.search(r'\d{2}[/-]\d{2}', cells[0]) else cells[1]
-                fund_code = re.sub(r'\s+', ' ', fund_code).strip()
+                # Identify fund code cell by filtering out date, type, account numbers, and numeric cells
+                fund_code = ""
+                for cell in cells:
+                    cell_clean = cell.strip()
+                    if not cell_clean or re.search(r'\d{2}[/-]\d{2}', cell_clean):
+                        continue
+                    if cell_clean.lower() in BLACKLISTED_NAMES:
+                        continue
+                    # Skip pure digits (like account numbers or amounts)
+                    if re.match(r'^[\d,.\s-]+$', cell_clean):
+                        continue
+                    fund_code = cell_clean
+                    break
+
+                if not fund_code or fund_code.lower() in BLACKLISTED_NAMES:
+                    continue
                 
                 # Clean amounts
                 nums = [float(a.replace(',', '')) for a in amount_matches]
@@ -172,7 +194,9 @@ def parse_html_table_kasikorn(html_body):
 def extract_transactions_with_gemini(text_content, api_key):
     """
     Call Gemini API to extract mutual fund transactions from unstructured text
+    Returns: (transactions_list, token_usage_dict)
     """
+    empty_usage = {"prompt_tokens": 0, "candidates_tokens": 0, "total_tokens": 0}
     if not api_key:
         if os.path.exists(".env"):
             with open(".env", "r", encoding="utf-8") as f:
@@ -180,7 +204,7 @@ def extract_transactions_with_gemini(text_content, api_key):
                     if line.startswith("GEMINI_API_KEY="):
                         api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
     if not api_key:
-        return []
+        return [], empty_usage
     
     url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={api_key}"
     system_instruction = (
@@ -218,6 +242,13 @@ def extract_transactions_with_gemini(text_content, api_key):
         try:
             with urllib.request.urlopen(req, timeout=35) as response:
                 res_data = json.loads(response.read().decode("utf-8"))
+                usage_meta = res_data.get("usageMetadata", {})
+                token_usage = {
+                    "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+                    "candidates_tokens": usage_meta.get("candidatesTokenCount", 0),
+                    "total_tokens": usage_meta.get("totalTokenCount", 0)
+                }
+
                 candidates = res_data.get("candidates", [])
                 if candidates:
                     text_out = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
@@ -228,33 +259,107 @@ def extract_transactions_with_gemini(text_content, api_key):
                         text_out = text_out[:-3]
                     parsed = json.loads(text_out.strip())
                     if isinstance(parsed, list):
-                        return parsed
+                        return parsed, token_usage
                     elif isinstance(parsed, dict) and "transactions" in parsed:
-                        return parsed["transactions"]
+                        return parsed["transactions"], token_usage
             break
         except urllib.error.HTTPError as e:
             if e.code == 429 and attempt < 2:
-                print(f"[!] Gemini 429 rate limit reached. Waiting 5s before retry (attempt {attempt+1}/3)...", file=sys.stderr, flush=True)
+                logger.warning("[!] Gemini 429 rate limit reached. Waiting 5s before retry (attempt %d/3)...", attempt + 1)
                 time.sleep(5)
                 continue
-            print(f"[!] Gemini extraction error: {e}", file=sys.stderr, flush=True)
+            logger.error("[!] Gemini extraction error: %s", e)
             break
         except Exception as e:
-            print(f"[!] Gemini extraction error: {e}", file=sys.stderr, flush=True)
+            logger.error("[!] Gemini extraction error: %s", e)
             break
-    return []
+    return [], empty_usage
+
+KNOWN_FUND_ALIASES = {
+    # TISCO Strategic
+    "TISCOSTRAT-A": "TSF",
+    "TISCOSTR-A": "TSF",
+    "TISCO STRATEGIC FUND CLASS A": "TSF",
+    "TISCO STRATEGIC FUND": "TSF",
+    "TSF-A": "TSF",
+    # SCB S&P 500
+    "SP500E": "SCBS&P500FUND",
+    "SCBS&P500E": "SCBS&P500FUND",
+    "SCBS&P500": "SCBS&P500FUND",
+    "SCB S&P 500 INDEX FUND": "SCBS&P500FUND",
+    # SCB China A Shares
+    "SCBCHAA": "SCBCHAFUND",
+    "SCB CHINA A-SHARES FUND (ACCUMULATION)": "SCBCHAFUND",
+    "SCB CHINA A-SHARES FUND": "SCBCHAFUND",
+    # Eastspring / ttb
+    "EASTSPRING ASIA ACTIVE EQUITY FUND (ACCUMULATION CLASS)": "ES-ASIA-A",
+    "EASTSPRING ASIA ACTIVE EQUITY FUND": "ES-ASIA-A",
+    "ES-ASIAEQ": "ES-ASIA-A",
+    "ES-ASIA": "ES-ASIA-A",
+    "EASTSPRING GIS GLOBAL BOND FUND (ACCUMULATION)": "ES-GIS-GBOND",
+    "EASTSPRING GIS GLOBAL BOND FUND": "ES-GIS-GBOND",
+    "ES-GERMAN": "ES-GER",
+    "EASTSPRING GERMANY EQUITY FUND": "ES-GER",
+    "KTAM CAPITAL SECURITIES FUND - CLASS A": "KT-CSBOND-A",
+    "KTAM CAPITAL SECURITIES FUND": "KT-CSBOND-A",
+    "EASTSPRING US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
+    "EASTSPRING GLOBAL DIVIDEND EQUITY FUND": "ES-GDIV",
+    "ES-GDIV-ACC": "ES-GDIV",
+    "EASTSPRING US INFORMATION TECHNOLOGY FUND": "ES-USTECH",
+    "ONE EUROPEAN EQUITY FUND": "ONE-EUROEQ",
+    # Dime KKP funds
+    "KKP NDQ100-UH FUND": "KKP NDQ100-UH-E",
+    "KKP NDQ100-UH": "KKP NDQ100-UH-E",
+    "KKP US500-UH FUND": "KKP US500-UH-E",
+    "KKP US500-UH": "KKP US500-UH-E",
+    # Kasikorn
+    "WEALTH PLUS SPEED4B": "K-WPSPEEDUP",
+    "WEALTHPLUS SPEEDUP": "K-WPSPEEDUP",
+    "K-FIXEDPLUS-A": "K-FIXEDPLUS",
+}
+
+BLACKLISTED_NAMES = {
+    "purchase (plan)", "ซื้อสม่ำเสมอ", "purchase", "sell", "dividend", 
+    "subscription", "redemption", "สับเปลี่ยนเข้า", "สับเปลี่ยนออก", 
+    "สับเปลี่ยน", "ขายคืน", "ซื้อ", "plan", "regular"
+}
 
 def match_fund_in_db(conn, fund_code):
     c = conn.cursor()
     clean_code = fund_code.strip()
+    upper_code = clean_code.upper()
+
+    # 0. Check blacklist
+    if clean_code.lower() in BLACKLISTED_NAMES:
+        return None, None
+
+    # Check known alias dictionary first
+    if upper_code in KNOWN_FUND_ALIASES:
+        target_abbr = KNOWN_FUND_ALIASES[upper_code]
+        c.execute("SELECT proj_id, proj_abbr_name FROM funds WHERE UPPER(proj_abbr_name) = ? LIMIT 1", (target_abbr.upper(),))
+        row = c.fetchone()
+        if row:
+            return row[0], row[1]
+        clean_code = target_abbr
+
     # 1. Exact match proj_abbr_name
     c.execute("SELECT proj_id, proj_abbr_name FROM funds WHERE LOWER(proj_abbr_name) = LOWER(?) LIMIT 1", (clean_code,))
     row = c.fetchone()
     if row:
         return row[0], row[1]
+
+    # 2. Match without punctuation / spaces
+    norm = clean_code.replace("-", "").replace(" ", "").replace("(", "").replace(")", "").lower()
+    c.execute(
+        "SELECT proj_id, proj_abbr_name FROM funds WHERE LOWER(REPLACE(REPLACE(REPLACE(REPLACE(proj_abbr_name, '-', ''), ' ', ''), '(', ''), ')', '')) = ? LIMIT 1",
+        (norm,)
+    )
+    row = c.fetchone()
+    if row:
+        return row[0], row[1]
     
-    # 2. Like match
-    c.execute("SELECT proj_id, proj_abbr_name FROM funds WHERE LOWER(proj_abbr_name) LIKE LOWER(?) OR LOWER(proj_name_en) LIKE LOWER(?) LIMIT 1", 
+    # 3. Like match on proj_name_en / proj_name_th
+    c.execute("SELECT proj_id, proj_abbr_name FROM funds WHERE LOWER(proj_name_en) LIKE LOWER(?) OR LOWER(proj_name_th) LIKE LOWER(?) LIMIT 1", 
               (f"%{clean_code}%", f"%{clean_code}%"))
     row = c.fetchone()
     if row:
@@ -287,19 +392,22 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
     total_txs_extracted = 0
     inserted_count = 0
     skipped_count = 0
+    total_prompt_tokens = 0
+    total_candidates_tokens = 0
+    total_tokens = 0
     details = []
     
-    print(f"[Harvester] Starting Gmail harvest for user '{user_id}'...", file=sys.stderr, flush=True)
+    logger.info("Starting Gmail harvest for user '%s'...", user_id)
 
     for broker_tag, sender_email in senders:
-        print(f"[Harvester] Searching for {broker_tag} emails from {sender_email}...", file=sys.stderr, flush=True)
+        logger.info("Searching for %s emails from %s...", broker_tag, sender_email)
         status, data = mail.search(None, f'(FROM "{sender_email}")')
         if status != "OK" or not data[0]:
-            print(f"[Harvester] No messages found for {broker_tag}.", file=sys.stderr, flush=True)
+            logger.info("No messages found for %s.", broker_tag)
             continue
         
         msg_ids = data[0].split()
-        print(f"[Harvester] Found {len(msg_ids)} emails for {broker_tag}. Processing up to {max_emails} latest...", file=sys.stderr, flush=True)
+        logger.info("Found %d emails for %s. Processing up to %d latest...", len(msg_ids), broker_tag, max_emails)
         # Scan most recent emails up to max_emails
         recent_ids = msg_ids[-max_emails:] if len(msg_ids) > max_emails else msg_ids
         
@@ -314,10 +422,10 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             subject = decode_mime_words(msg.get("Subject", ""))
             subj_lower = subject.lower()
             if "credit card" in subj_lower or "บัตรเครดิต" in subj_lower:
-                print(f"[Harvester] [{broker_tag}] Skipping non-investment email: '{subject[:60]}'", file=sys.stderr, flush=True)
+                logger.debug("[%s] Skipping non-investment email: '%s'", broker_tag, subject[:60])
                 continue
 
-            print(f"[Harvester] [{broker_tag}] Processing email: '{subject[:60]}'...", file=sys.stderr, flush=True)
+            logger.info("[%s] Processing email: '%s'...", broker_tag, subject[:60])
             
             # 1. Kasikorn Funds body table
             if broker_tag == "KBANK":
@@ -342,6 +450,9 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     for tx in txs:
                         total_txs_extracted += 1
                         proj_id, fund_abbr = match_fund_in_db(conn, tx["fund_code"])
+                        if not proj_id or not fund_abbr:
+                            logger.warning("Skipping invalid or blacklisted fund name: '%s'", tx["fund_code"])
+                            continue
                         idem_key = compute_idempotency_key(
                             user_id, tx["platform"], proj_id, tx["trans_date"], tx["trans_type"], tx["units"], tx["total_amount"], tx["note"]
                         )
@@ -355,11 +466,13 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                             """, (tx_id, user_id, idem_key, proj_id, fund_abbr, tx["platform"], tx["trans_type"], tx["trans_date"], str(tx["units"]), str(tx["unit_price"]), str(tx["total_amount"]), str(tx["fee"]), tx["note"]))
                             if c.rowcount > 0:
                                 inserted_count += 1
+                                logger.info("[+] Inserted %s %s (%.2f THB) from KBank email", tx['trans_date'], fund_abbr, tx['total_amount'])
                                 details.append(f"Inserted {tx['trans_date']} {fund_abbr} {tx['total_amount']} THB")
                             else:
                                 skipped_count += 1
+                                logger.debug("[*] Skipped duplicate %s %s", tx['trans_date'], fund_abbr)
                         except Exception as e:
-                            print(f"[!] DB insert error: {e}", file=sys.stderr)
+                            logger.error("DB insert error: %s", e)
                     conn.commit()
             
             # 2. Check for attachments (PDF)
@@ -378,26 +491,33 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     active_broker = "TTB" if "ttb" in broker_tag else ("DIME" if "DIME" in broker_tag else ("SCB" if "SCB" in broker_tag else "KBANK"))
                     candidate_pwds = passwords.get(active_broker, []) + passwords.get("GENERAL", [])
                     
-                    print(f"[Harvester] Found attachment '{filename}'. Attempting decryption...", file=sys.stderr, flush=True)
+                    logger.info("[%s] Found attachment '%s'. Attempting decryption...", broker_tag, filename)
                     reader, used_pwd = decrypt_pdf_bytes(pdf_data, candidate_pwds)
                     if not reader:
-                        print(f"[Harvester] [!] Decryption failed for '{filename}'", file=sys.stderr, flush=True)
+                        logger.warning("[%s] Decryption failed for '%s'", broker_tag, filename)
                         details.append(f"Failed to decrypt {filename} from {sender_email}")
                         continue
                     
-                    print(f"[Harvester] [✓] Decrypted '{filename}' using password '{used_pwd or '<none>'}'", file=sys.stderr, flush=True)
+                    logger.info("[%s] [✓] Decrypted '%s' using password '%s'", broker_tag, filename, used_pwd or '<none>')
                     
                     pdf_text = "\n".join(p.extract_text() or "" for p in reader.pages)
                     if not pdf_text.strip():
                         continue
                     
                     # Extract transactions using Gemini or regex
-                    gemini_txs = extract_transactions_with_gemini(pdf_text, gemini_api_key)
+                    gemini_txs, usage = extract_transactions_with_gemini(pdf_text, gemini_api_key)
+                    total_prompt_tokens += usage.get("prompt_tokens", 0)
+                    total_candidates_tokens += usage.get("candidates_tokens", 0)
+                    total_tokens += usage.get("total_tokens", 0)
+
                     for tx in gemini_txs:
                         total_txs_extracted += 1
                         platform_code = tx.get("platform", active_broker).upper()
                         fcode = tx.get("fund_code", "")
                         proj_id, fund_abbr = match_fund_in_db(conn, fcode)
+                        if not proj_id or not fund_abbr:
+                            logger.warning("Skipping invalid or blacklisted fund name: '%s'", fcode)
+                            continue
                         t_date = tx.get("trans_date", datetime.now().strftime("%Y-%m-%d"))
                         t_type = tx.get("trans_type", "BUY").upper()
                         units = float(tx.get("units", 0))
@@ -417,11 +537,13 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                             """, (tx_id, user_id, idem_key, proj_id, fund_abbr, platform_code, t_type, t_date, f"{units:.4f}", f"{unit_price:.4f}", f"{total_amount:.2f}", f"{fee:.2f}", note))
                             if c.rowcount > 0:
                                 inserted_count += 1
+                                logger.info("[+] Inserted %s %s (%.2f THB) from %s", t_date, fund_abbr, total_amount, filename)
                                 details.append(f"Inserted {t_date} {fund_abbr} ({total_amount:,.2f} THB) from {filename}")
                             else:
                                 skipped_count += 1
+                                logger.debug("[*] Skipped duplicate %s %s from %s", t_date, fund_abbr, filename)
                         except Exception as e:
-                            print(f"[!] DB insert error: {e}", file=sys.stderr)
+                            logger.error("DB insert error: %s", e)
                     conn.commit()
     
     # Update last_sync_at in user_settings
@@ -443,6 +565,11 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
         "transactions_extracted": total_txs_extracted,
         "transactions_inserted": inserted_count,
         "transactions_skipped": skipped_count,
+        "tokens_used": {
+            "prompt_tokens": total_prompt_tokens,
+            "candidates_tokens": total_candidates_tokens,
+            "total_tokens": total_tokens
+        },
         "details": details[:20]
     }
 

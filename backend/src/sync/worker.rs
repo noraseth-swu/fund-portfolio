@@ -21,7 +21,7 @@ impl SyncService {
             return Ok(0);
         }
 
-        println!(
+        tracing::info!(
             "[Background Sync] Found {} active funds in portfolio to update NAV...",
             held_ids.len()
         );
@@ -67,7 +67,7 @@ impl SyncService {
                         let _ = Repository::upsert_nav_history(pool, held_id, &items).await;
                     }
                     updated_count += 1;
-                    println!(
+                    tracing::info!(
                         "[Background Sync] Updated NAV for fund {} (SEC: {}): {} records",
                         held_id,
                         sec_proj_id,
@@ -75,13 +75,13 @@ impl SyncService {
                     );
                 }
                 Ok(_) => {
-                    println!(
+                    tracing::debug!(
                         "[Background Sync] No new NAV records returned for {} (SEC: {})",
                         held_id, sec_proj_id
                     );
                 }
                 Err(e) => {
-                    eprintln!(
+                    tracing::error!(
                         "[Background Sync Error] Failed to fetch NAV for {} (SEC: {}): {}",
                         held_id, sec_proj_id, e
                     );
@@ -95,14 +95,14 @@ impl SyncService {
     /// สตาร์ท Background Worker ให้ทำงานวนลูปทุก 4 ชั่วโมง
     pub fn start_background_worker(pool: Arc<DbPool>, api_key: String) {
         tokio::spawn(async move {
-            println!("[Background Worker] Started NAV sync scheduler (every 4 hours).");
+            tracing::info!("[Background Worker] Started NAV sync scheduler (every 4 hours).");
             loop {
                 // รอ 10 วินาทีหลังสตาร์ทเครื่อง แล้วรันรอบแรก
                 sleep(Duration::from_secs(10)).await;
 
-                println!("[Background Worker] Triggering periodic NAV sync...");
+                tracing::info!("[Background Worker] Triggering periodic NAV sync...");
                 if let Err(e) = Self::sync_held_funds(&pool, &api_key).await {
-                    eprintln!("[Background Worker Error] {}", e);
+                    tracing::error!("[Background Worker Error] {}", e);
                 }
 
                 // หน่วงเวลา 4 ชั่วโมงสำหรับรอบถัดไป
