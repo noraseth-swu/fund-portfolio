@@ -112,6 +112,35 @@ class TestHarvesterLogic(unittest.TestCase):
         self.assertIn("28/06/2024", cleaned)
         self.assertNotIn("ข้อกำหนดและเงื่อนไขทั้งหมด", cleaned)
 
+    def test_ttb_regex_fast_path(self):
+        sample_ttb_pdf_text = """
+PT000000000003129684
+28-DEC-2023
+O23362010997256
+SUBSCRIPTION
+EASTSPRING US Information Technology Fund
+EASTSPRING
+625.00 13.5577 46.0992
+PT000000000003129684
+28-DEC-2023
+O23362010997303
+SUBSCRIPTION
+SCB CHINA A-SHARES FUND (Accumulation)
+SCBAM
+150.00 7.1888 20.8657
+"""
+        txs, ok = self.harvester.try_regex_parse_confirmation(sample_ttb_pdf_text, "TTB")
+        self.assertTrue(ok)
+        self.assertEqual(len(txs), 2)
+        self.assertEqual(txs[0]["platform"], "TTB")
+        self.assertEqual(txs[0]["fund_code"], "EASTSPRING US Information Technology Fund")
+        self.assertEqual(txs[0]["trans_date"], "2023-12-28")
+        self.assertEqual(txs[0]["total_amount"], 625.0)
+        self.assertEqual(txs[0]["unit_price"], 13.5577)
+        self.assertEqual(txs[0]["units"], 46.0992)
+        self.assertEqual(txs[0]["trans_type"], "BUY")
+        self.assertEqual(txs[0]["note"], "Order O23362010997256")
+
     def test_time_sleep_callable(self):
         """Verify time module is imported and usable"""
         self.assertTrue(hasattr(self.harvester, "time"))

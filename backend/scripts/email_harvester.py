@@ -361,6 +361,44 @@ def try_regex_parse_confirmation(pdf_text, broker_tag):
             if txs:
                 return txs, True
 
+    # 2. TTB Confirmation Note Fast-Path (0 Gemini Tokens)
+    if broker_tag == "TTB":
+        ttb_pattern = re.compile(
+            r'(?:PT\d+[\r\n]+)?'
+            r'(\d{1,2}-[A-Za-z]{3}-\d{4})[\r\n]+'
+            r'([A-Za-z0-9]+)[\r\n]+'
+            r'(SUBSCRIPTION|REDEMPTION|SWITCH\s+IN|SWITCH\s+OUT|TRANSFER\s+IN|TRANSFER\s+OUT|REVERSE)[\r\n]+'
+            r'([^\r\n]+)[\r\n]+'
+            r'([^\r\n]+)[\r\n]+'
+            r'([\d,]+\.\d{2,4})\s+([\d,]+\.\d{2,4})\s+([\d,]+\.\d{2,4})',
+            re.MULTILINE
+        )
+        for m in ttb_pattern.finditer(pdf_text):
+            d_raw, tx_no, t_type_raw, fname, amc, amt_str, nav_str, units_str = m.groups()
+            try:
+                dt = datetime.strptime(d_raw.strip(), '%d-%b-%Y')
+                iso_date = dt.strftime('%Y-%m-%d')
+                amt = float(amt_str.replace(',', ''))
+                nav = float(nav_str.replace(',', ''))
+                units = float(units_str.replace(',', ''))
+                is_buy = any(kw in t_type_raw.upper() for kw in ("SUBSCRIPTION", "SWITCH IN", "TRANSFER IN"))
+                t_type = "BUY" if is_buy else "SELL"
+                txs.append({
+                    "platform": "TTB",
+                    "fund_code": fname.strip(),
+                    "trans_type": t_type,
+                    "trans_date": iso_date,
+                    "units": round(units, 4),
+                    "unit_price": round(nav, 4),
+                    "total_amount": round(amt, 2),
+                    "fee": 0.0,
+                    "note": f"Order {tx_no}"
+                })
+            except Exception:
+                pass
+        if txs:
+            return txs, True
+
     return [], False
 
 def extract_transactions_with_gemini(text_content, api_key):
@@ -482,15 +520,20 @@ KNOWN_FUND_ALIASES = {
     # Eastspring / ttb
     "EASTSPRING ASIA ACTIVE EQUITY FUND (ACCUMULATION CLASS)": "ES-ASIA-A",
     "EASTSPRING ASIA ACTIVE EQUITY FUND": "ES-ASIA-A",
+    "TMB EASTSPRING ASIA ACTIVE FUND": "ES-ASIA",
     "ES-ASIAEQ": "ES-ASIA-A",
     "ES-ASIA": "ES-ASIA-A",
     "EASTSPRING GIS GLOBAL BOND FUND (ACCUMULATION)": "ES-GIS-GBOND",
     "EASTSPRING GIS GLOBAL BOND FUND": "ES-GIS-GBOND",
     "ES-GERMAN": "ES-GER",
     "EASTSPRING GERMANY EQUITY FUND": "ES-GER",
+    "TMB GERMAN EQUITY FUND": "ES-GER",
     "KTAM CAPITAL SECURITIES FUND - CLASS A": "KT-CSBOND-A",
     "KTAM CAPITAL SECURITIES FUND": "KT-CSBOND-A",
     "EASTSPRING US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
+    "TMB US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
+    "EASTSPRING GLOBAL CORE EQUITY FUND": "ES-GCORE",
+    "TMB EASTSPRING GLOBAL CORE EQUITY FUND": "ES-GCORE",
     "EASTSPRING GLOBAL DIVIDEND EQUITY FUND": "ES-GDIV",
     "ES-GDIV-ACC": "ES-GDIV",
     "EASTSPRING US INFORMATION TECHNOLOGY FUND": "ES-USTECH",
