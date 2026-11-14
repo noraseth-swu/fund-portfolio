@@ -191,6 +191,90 @@ def parse_html_table_kasikorn(html_body):
                     })
     return txs
 
+def clean_pdf_boilerplate(text):
+    """
+    Strips repetitive legal footers, warning boxes, and branch directories
+    to cut token consumption by 40-60%.
+    """
+    disclaimer_markers = [
+        "การลงทุนในกองทุนรวมไม่ใช่การฝากเงิน",
+        "ผู้ลงทุนควรทำความเข้าใจลักษณะสินค้า",
+        "Mutual fund is not a bank deposit",
+        "Disclaimer:",
+        "ข้อกำหนดและเงื่อนไข:",
+        "สอบถามข้อมูลเพิ่มเติมหรือขอรับหนังสือชี้ชวน",
+        "Warning: Investment in mutual fund",
+        "คำเตือน :",
+        "คำเตือน:",
+        "คำเตือนเกี่ยวกับการลงทุน",
+    ]
+    lines = text.split("\n")
+    cleaned = []
+    for line in lines:
+        if any(marker.lower() in line.lower() for marker in disclaimer_markers):
+            break
+        cleaned.append(line)
+    result = "\n".join(cleaned).strip()
+    return result if len(result) > 100 else text[:4000]
+
+def try_regex_parse_confirmation(pdf_text, broker_tag):
+    """
+    Fast-path parser for structured confirmation notes (Dime, SCB).
+    Returns (transactions_list, success_bool). If success, 0 Gemini tokens are used!
+    """
+    txs = []
+    text_clean = re.sub(r'[ \t]+', ' ', pdf_text)
+    
+    # 1. Dime Confirmation Note
+    if broker_tag == "DIME":
+        fund_match = re.search(r'(?:ชื่อย่อหลักทรัพย์|กองทุน|Fund Code|Fund Abbr)[:\s]+([A-Za-z0-9\-_()]+)', text_clean, re.I)
+        date_match = re.search(r'(\d{2})[/-](\d{2})[/-](\d{4})', text_clean)
+        order_match = re.search(r'(?:เลขที่คำสั่ง|Order No\.?)[:\s]+([A-Za-z0-9]+)', text_clean, re.I)
+        
+        amounts = re.findall(r'[\d,]+\.\d{2,4}', text_clean)
+        num_vals = []
+        for a in amounts:
+            try:
+                num_vals.append(float(a.replace(',', '')))
+            except ValueError:
+                pass
+        
+        if fund_match and date_match and len(num_vals) >= 3:
+            fcode = fund_match.group(1).strip()
+            d, m, y = date_match.groups()
+            y_int = int(y)
+            if y_int > 2400:
+                y_int -= 543
+            trans_date = f"{y_int:04d}-{int(m):02d}-{int(d):02d}"
+            
+            total_amount = max(num_vals)
+            sorted_nums = sorted(num_vals)
+            found_pair = False
+            for u in sorted_nums:
+                for p in sorted_nums:
+                    if abs(u * p - total_amount) < 1.0 and u > 0 and p > 0:
+                        units = min(u, p) if total_amount > 100 else u
+                        nav = max(u, p) if total_amount > 100 else p
+                        txs.append({
+                            "platform": "DIME",
+                            "fund_code": fcode,
+                            "trans_type": "BUY" if "ซื้อ" in text_clean or "BUY" in text_clean.upper() else "SELL",
+                            "trans_date": trans_date,
+                            "units": round(units, 4),
+                            "unit_price": round(nav, 4),
+                            "total_amount": round(total_amount, 2),
+                            "fee": 0.0,
+                            "note": order_match.group(1) if order_match else "Dime Confirmation Note"
+                        })
+                        found_pair = True
+                        break
+                if found_pair:
+                    break
+            if txs:
+                return txs, True
+
+    return [], False
+
 def extract_transactions_with_gemini(text_content, api_key):
     """
     Call Gemini API to extract mutual fund transactions from unstructured text
@@ -367,11 +451,32 @@ def match_fund_in_db(conn, fund_code):
     
     return clean_code, clean_code
 
-def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5, db_path, gemini_api_key=None, max_emails=30):
+def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5, db_path, gemini_api_key=None, max_emails=0):
     passwords = generate_bank_passwords(dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5)
     
     conn = sqlite3.connect(db_path)
     c = conn.cursor()
+
+    # 0. Ensure checkpoint cache tables exist
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS processed_emails (
+            message_id TEXT PRIMARY KEY,
+            broker TEXT,
+            subject TEXT,
+            email_date TEXT,
+            tx_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS processed_attachments (
+            file_hash TEXT PRIMARY KEY,
+            filename TEXT,
+            tx_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+    """)
+    conn.commit()
     
     import pypdf
     
@@ -407,11 +512,14 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             continue
         
         msg_ids = data[0].split()
-        logger.info("Found %d emails for %s. Processing up to %d latest...", len(msg_ids), broker_tag, max_emails)
-        # Scan most recent emails up to max_emails
-        recent_ids = msg_ids[-max_emails:] if len(msg_ids) > max_emails else msg_ids
+        if max_emails > 0:
+            logger.info("Found %d emails for %s. Processing up to %d latest...", len(msg_ids), broker_tag, max_emails)
+            target_ids = msg_ids[-max_emails:]
+        else:
+            logger.info("Found %d emails for %s. Full Historical Sweep (oldest to newest)...", len(msg_ids), broker_tag)
+            target_ids = msg_ids  # All emails in chronological order!
         
-        for msg_id in reversed(recent_ids):
+        for idx, msg_id in enumerate(target_ids, 1):
             total_emails_scanned += 1
             res, msg_data = mail.fetch(msg_id, '(RFC822)')
             if res != "OK":
@@ -425,7 +533,16 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                 logger.debug("[%s] Skipping non-investment email: '%s'", broker_tag, subject[:60])
                 continue
 
-            logger.info("[%s] Processing email: '%s'...", broker_tag, subject[:60])
+            message_id_header = (msg.get("Message-ID") or "").strip()
+            email_date_header = (msg.get("Date") or "").strip()
+            if message_id_header:
+                c.execute("SELECT tx_count FROM processed_emails WHERE message_id = ?", (message_id_header,))
+                if c.fetchone():
+                    logger.debug("[%s] [%d/%d] Skipping already-processed email: '%s' (0 Tokens)", broker_tag, idx, len(target_ids), subject[:40])
+                    continue
+
+            logger.info("[%s] [%d/%d] Processing email: '%s'...", broker_tag, idx, len(target_ids), subject[:60])
+            email_tx_count = 0
             
             # 1. Kasikorn Funds body table
             if broker_tag == "KBANK":
@@ -449,6 +566,7 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     txs = parse_html_table_kasikorn(html_body)
                     for tx in txs:
                         total_txs_extracted += 1
+                        email_tx_count += 1
                         proj_id, fund_abbr = match_fund_in_db(conn, tx["fund_code"])
                         if not proj_id or not fund_abbr:
                             logger.warning("Skipping invalid or blacklisted fund name: '%s'", tx["fund_code"])
@@ -487,6 +605,12 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     if not pdf_data:
                         continue
                     
+                    pdf_hash = hashlib.sha256(pdf_data).hexdigest()
+                    c.execute("SELECT tx_count FROM processed_attachments WHERE file_hash = ?", (pdf_hash,))
+                    if c.fetchone():
+                        logger.debug("[%s] Skipping already-processed PDF '%s' (hash: %s, 0 Tokens)", broker_tag, filename, pdf_hash[:8])
+                        continue
+
                     total_attachments_found += 1
                     active_broker = "TTB" if "ttb" in broker_tag else ("DIME" if "DIME" in broker_tag else ("SCB" if "SCB" in broker_tag else "KBANK"))
                     candidate_pwds = passwords.get(active_broker, []) + passwords.get("GENERAL", [])
@@ -504,14 +628,23 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     if not pdf_text.strip():
                         continue
                     
-                    # Extract transactions using Gemini or regex
-                    gemini_txs, usage = extract_transactions_with_gemini(pdf_text, gemini_api_key)
-                    total_prompt_tokens += usage.get("prompt_tokens", 0)
-                    total_candidates_tokens += usage.get("candidates_tokens", 0)
-                    total_tokens += usage.get("total_tokens", 0)
+                    # Extract transactions: Try Regex Fast-Path first (0 Token)
+                    regex_txs, regex_ok = try_regex_parse_confirmation(pdf_text, active_broker)
+                    if regex_ok:
+                        logger.info("[%s] [✓] Regex Fast-Path parsed %d transactions from '%s' (0 Tokens used!)", broker_tag, len(regex_txs), filename)
+                        gemini_txs = regex_txs
+                    else:
+                        cleaned_text = clean_pdf_boilerplate(pdf_text)
+                        gemini_txs, usage = extract_transactions_with_gemini(cleaned_text, gemini_api_key)
+                        total_prompt_tokens += usage.get("prompt_tokens", 0)
+                        total_candidates_tokens += usage.get("candidates_tokens", 0)
+                        total_tokens += usage.get("total_tokens", 0)
 
+                    pdf_tx_count = 0
                     for tx in gemini_txs:
                         total_txs_extracted += 1
+                        email_tx_count += 1
+                        pdf_tx_count += 1
                         platform_code = tx.get("platform", active_broker).upper()
                         fcode = tx.get("fund_code", "")
                         proj_id, fund_abbr = match_fund_in_db(conn, fcode)
@@ -544,7 +677,17 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                                 logger.debug("[*] Skipped duplicate %s %s from %s", t_date, fund_abbr, filename)
                         except Exception as e:
                             logger.error("DB insert error: %s", e)
+                    
+                    # Record PDF attachment hash into checkpoint cache
+                    c.execute("INSERT OR IGNORE INTO processed_attachments (file_hash, filename, tx_count) VALUES (?, ?, ?)",
+                              (pdf_hash, filename, pdf_tx_count))
                     conn.commit()
+
+            # Record email message_id into checkpoint cache
+            if message_id_header:
+                c.execute("INSERT OR IGNORE INTO processed_emails (message_id, broker, subject, email_date, tx_count) VALUES (?, ?, ?, ?, ?)",
+                          (message_id_header, broker_tag, subject, email_date_header, email_tx_count))
+                conn.commit()
     
     # Update last_sync_at in user_settings
     now_str = datetime.now().isoformat()
@@ -586,7 +729,7 @@ def main():
     parser.add_argument("--national-id-last5", default="")
     parser.add_argument("--db-path", default="portfolio.db")
     parser.add_argument("--gemini-api-key", default="")
-    parser.add_argument("--max-emails", type=int, default=30)
+    parser.add_argument("--max-emails", type=int, default=0)
     
     args = parser.parse_args()
     

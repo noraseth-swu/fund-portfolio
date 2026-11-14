@@ -691,6 +691,8 @@ pub async fn sync_email_statements(
             "portfolio.db",
             "--gemini-api-key",
             &state.gemini_api_key,
+            "--max-emails",
+            "0", // 0 = Full sweep from oldest to newest with Checkpoint & Resume cache!
         ])
         .output()
         .await

@@ -236,6 +236,24 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             last_sync_at TEXT,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 6. ตารางบันทึกประวัติอีเมลที่เคยประมวลผลแล้ว (Checkpoint & Resume) ป้องกันการสแกนซ้ำและประหยัด Token 100%
+        CREATE TABLE IF NOT EXISTS processed_emails (
+            message_id TEXT PRIMARY KEY,
+            broker TEXT,
+            subject TEXT,
+            email_date TEXT,
+            tx_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 7. ตารางบันทึกไฟล์แนบ PDF ที่เคยถอดรหัสแล้ว (Content Hash)
+        CREATE TABLE IF NOT EXISTS processed_attachments (
+            file_hash TEXT PRIMARY KEY,
+            filename TEXT,
+            tx_count INTEGER DEFAULT 0,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
         "#,
     )
     .execute(pool)
