@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, lazy, Suspense } from 'react';
 import {
   SignIn,
   UserButton,
@@ -26,11 +26,35 @@ import { getPortfolio, triggerNavSync, setTokenGetter, type PortfolioSummary } f
 import { MetricCard } from './components/MetricCard';
 import { PlatformBadge } from './components/PlatformBadge';
 import { AllocationChart } from './components/AllocationChart';
-import { TransactionModal } from './components/TransactionModal';
-import { TransactionHistoryModal } from './components/TransactionHistoryModal';
-import { CsvImportModal } from './components/CsvImportModal';
 import { useTheme } from './lib/theme';
 import { useI18n } from './lib/i18n';
+
+// React.lazy for heavy modal chunks to minimize initial bundle size
+const TransactionModal = lazy(() =>
+  import('./components/TransactionModal').then((m) => ({ default: m.TransactionModal }))
+);
+const TransactionHistoryModal = lazy(() =>
+  import('./components/TransactionHistoryModal').then((m) => ({ default: m.TransactionHistoryModal }))
+);
+const CsvImportModal = lazy(() =>
+  import('./components/CsvImportModal').then((m) => ({ default: m.CsvImportModal }))
+);
+
+const DashboardSkeleton: React.FC = () => (
+  <div className="space-y-6 animate-pulse">
+    <div className="h-9 w-56 bg-slate-200 dark:bg-slate-800 rounded-xl" />
+    <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
+      {[1, 2, 3, 4].map((i) => (
+        <div key={i} className="h-28 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl p-5 shadow-sm" />
+      ))}
+    </div>
+    <div className="grid grid-cols-1 lg:grid-cols-3 gap-6">
+      <div className="h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm" />
+      <div className="lg:col-span-2 h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm" />
+    </div>
+    <div className="h-72 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl shadow-sm" />
+  </div>
+);
 
 export const App: React.FC = () => {
   const { getToken, isSignedIn, isLoaded } = useAuth();
@@ -286,16 +310,16 @@ export const App: React.FC = () => {
       {/* Main Dashboard Content */}
       <main className="flex-1 max-w-7xl w-full mx-auto px-4 sm:px-6 lg:px-8 py-6 space-y-6">
         {loading ? (
-          <div className="py-20 text-center text-slate-500 text-sm">{t('loadingPortfolio')}</div>
+          <DashboardSkeleton />
         ) : (
           <>
             {/* Greeting banner */}
             <div className="flex items-center justify-between">
               <div>
-                <h2 className="text-xl font-bold text-white">
+                <h2 className="text-xl font-bold text-slate-900 dark:text-white">
                   {t('greeting', { name: user?.firstName || user?.username || (locale === 'th' ? 'นักลงทุน' : 'Investor') })}
                 </h2>
-                <p className="text-xs text-slate-400">{t('greetingSubtitle')}</p>
+                <p className="text-xs text-slate-500 dark:text-slate-400">{t('greetingSubtitle')}</p>
               </div>
             </div>
 
@@ -388,14 +412,14 @@ export const App: React.FC = () => {
                     })}
                   </div>
                 ) : (
-                  <div className="p-8 text-center border border-dashed border-slate-800 rounded-xl my-auto">
-                    <p className="text-slate-400 text-sm mb-3">{t('noPlatformData')}</p>
+                  <div className="p-8 text-center border border-dashed border-slate-300 dark:border-slate-800 rounded-xl my-auto">
+                    <p className="text-slate-500 dark:text-slate-400 text-sm mb-3">{t('noPlatformData')}</p>
                     <button
                       onClick={() => setIsAddModalOpen(true)}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition cursor-pointer"
+                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition cursor-pointer shadow-sm btn-primary-indigo"
                     >
-                      <Plus className="w-3.5 h-3.5" />
-                      <span>{t('addTransaction')}</span>
+                      <Plus className="w-3.5 h-3.5 text-white" />
+                      <span className="text-white">{t('addTransaction')}</span>
                     </button>
                   </div>
                 )}
@@ -426,9 +450,9 @@ export const App: React.FC = () => {
               </div>
 
               {/* Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-800/80">
+              <div className="overflow-x-auto rounded-xl border border-slate-200 dark:border-slate-800/80 shadow-sm">
                 <table className="w-full text-left text-xs sm:text-sm">
-                  <thead className="bg-slate-950 text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-800">
+                  <thead className="bg-slate-100 dark:bg-slate-950 text-slate-700 dark:text-slate-400 uppercase text-[10px] tracking-wider border-b border-slate-200 dark:border-slate-800 font-bold select-none">
                     <tr>
                       <th className="py-3 px-4">{t('fundHeader')}</th>
                       <th className="py-3 px-4">{t('platformHeader')}</th>
@@ -439,7 +463,7 @@ export const App: React.FC = () => {
                       <th className="py-3 px-4 text-right">{t('plHeader')}</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-800/60 text-slate-200">
+                  <tbody className="divide-y divide-slate-200 dark:divide-slate-800/60 text-slate-800 dark:text-slate-200">
                     {filteredHoldings.length === 0 ? (
                       <tr>
                         <td colSpan={7} className="py-8 text-center text-slate-500 text-xs">
@@ -452,36 +476,36 @@ export const App: React.FC = () => {
                         const isPos = upl >= 0;
 
                         return (
-                          <tr key={`${h.proj_id}-${h.platform}-${i}`} className="hover:bg-slate-800/30 transition">
+                          <tr key={`${h.proj_id}-${h.platform}-${i}`} className="hover:bg-indigo-50/40 dark:hover:bg-slate-800/30 transition">
                             <td className="py-3.5 px-4 whitespace-nowrap">
                               <span className="font-bold text-slate-900 dark:text-white block">{h.fund_abbr}</span>
-                              <span className="text-[11px] text-slate-400 block truncate max-w-xs">
+                              <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate max-w-xs" title={h.fund_name_th || h.proj_id}>
                                 {h.fund_name_th || h.proj_id}
                               </span>
                             </td>
                             <td className="py-3.5 px-4 whitespace-nowrap">
                               <PlatformBadge platform={h.platform} />
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono text-slate-600 dark:text-slate-300">
+                            <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
                               {parseFloat(h.total_units).toLocaleString(undefined, { minimumFractionDigits: 4 })}
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono text-slate-600 dark:text-slate-300">
+                            <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
                               {parseFloat(h.avg_cost).toFixed(4)}
                             </td>
-                            <td className="py-3.5 px-4 text-right font-mono text-indigo-600 dark:text-indigo-300 font-semibold">
+                            <td className="py-3.5 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-bold">
                               {parseFloat(h.current_nav).toFixed(4)}
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
                               {formatMoney(h.market_value)}
                             </td>
                             <td className="py-3.5 px-4 text-right whitespace-nowrap font-mono">
-                              <span className={`font-bold ${isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
+                              <span className={`font-bold ${isPos ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
                                 {isPos ? '+' : ''}
                                 {formatMoney(h.unrealized_pl)}
                               </span>
                               <span
                                 className={`text-[10px] block font-semibold ${
-                                  isPos ? 'text-emerald-500' : 'text-rose-500'
+                                  isPos ? 'text-emerald-600 dark:text-emerald-500' : 'text-rose-600 dark:text-rose-500'
                                 }`}
                               >
                                 {isPos ? '+' : ''}
@@ -500,22 +524,30 @@ export const App: React.FC = () => {
         )}
       </main>
 
-      {/* Modals */}
-      <TransactionModal
-        isOpen={isAddModalOpen}
-        onClose={() => setIsAddModalOpen(false)}
-        onSuccess={loadData}
-      />
-      <TransactionHistoryModal
-        isOpen={isHistoryModalOpen}
-        onClose={() => setIsHistoryModalOpen(false)}
-        onChanged={loadData}
-      />
-      <CsvImportModal
-        isOpen={isCsvModalOpen}
-        onClose={() => setIsCsvModalOpen(false)}
-        onSuccess={loadData}
-      />
+      {/* Modals loaded lazily on demand via Suspense */}
+      <Suspense fallback={null}>
+        {isAddModalOpen && (
+          <TransactionModal
+            isOpen={isAddModalOpen}
+            onClose={() => setIsAddModalOpen(false)}
+            onSuccess={loadData}
+          />
+        )}
+        {isHistoryModalOpen && (
+          <TransactionHistoryModal
+            isOpen={isHistoryModalOpen}
+            onClose={() => setIsHistoryModalOpen(false)}
+            onChanged={loadData}
+          />
+        )}
+        {isCsvModalOpen && (
+          <CsvImportModal
+            isOpen={isCsvModalOpen}
+            onClose={() => setIsCsvModalOpen(false)}
+            onSuccess={loadData}
+          />
+        )}
+      </Suspense>
     </div>
   );
 };

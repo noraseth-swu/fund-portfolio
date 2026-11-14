@@ -2,6 +2,7 @@ import React from 'react';
 import { ResponsiveContainer, PieChart, Pie, Cell, Tooltip } from 'recharts';
 import type { PlatformSummary } from '../lib/api';
 import { useI18n } from '../lib/i18n';
+import { useTheme } from '../lib/theme';
 
 interface Props {
   platforms: Record<string, PlatformSummary>;
@@ -17,6 +18,10 @@ const PLATFORM_COLORS: Record<string, string> = {
 
 export const AllocationChart: React.FC<Props> = ({ platforms }) => {
   const { t } = useI18n();
+  const { theme } = useTheme();
+
+  const isDark = theme === 'dark' || (theme === 'auto' && typeof window !== 'undefined' && window.matchMedia('(prefers-color-scheme: dark)').matches);
+
   const data = Object.values(platforms)
     .filter((p) => parseFloat(p.market_value) > 0)
     .map((p) => ({
@@ -35,7 +40,7 @@ export const AllocationChart: React.FC<Props> = ({ platforms }) => {
   }
 
   return (
-    <div className="h-64 w-full relative">
+    <div className="h-64 w-full relative flex items-center justify-center">
       <ResponsiveContainer width="100%" height="100%">
         <PieChart>
           <Pie
@@ -48,7 +53,7 @@ export const AllocationChart: React.FC<Props> = ({ platforms }) => {
             dataKey="value"
           >
             {data.map((entry, index) => (
-              <Cell key={`cell-${index}`} fill={entry.color} stroke="#0f172a" strokeWidth={3} />
+              <Cell key={`cell-${index}`} fill={entry.color} stroke={isDark ? '#0f172a' : '#ffffff'} strokeWidth={3} />
             ))}
           </Pie>
           <Tooltip
@@ -56,10 +61,10 @@ export const AllocationChart: React.FC<Props> = ({ platforms }) => {
               if (active && payload && payload.length) {
                 const item = payload[0].payload;
                 return (
-                  <div className="bg-slate-900 border border-slate-700 px-3 py-2 rounded-lg shadow-xl text-xs">
-                    <p className="font-bold text-white mb-0.5">{item.name}</p>
-                    <p className="text-slate-300">
-                      {item.value.toLocaleString()} THB ({item.alloc}%)
+                  <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700 px-3 py-2 rounded-xl shadow-xl text-xs">
+                    <p className="font-bold text-slate-900 dark:text-white mb-0.5">{item.name}</p>
+                    <p className="text-slate-600 dark:text-slate-300 font-mono">
+                      {item.value.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })} THB ({item.alloc}%)
                     </p>
                   </div>
                 );
@@ -69,6 +74,11 @@ export const AllocationChart: React.FC<Props> = ({ platforms }) => {
           />
         </PieChart>
       </ResponsiveContainer>
+      {/* Centered Portfolio Quick Stat */}
+      <div className="absolute inset-0 flex flex-col items-center justify-center pointer-events-none select-none">
+        <span className="text-[10px] uppercase tracking-wider text-slate-400 font-medium">Platforms</span>
+        <span className="text-base font-bold text-slate-900 dark:text-white font-mono">{data.length}</span>
+      </div>
     </div>
   );
 };
