@@ -1,7 +1,7 @@
 use super::AppState;
 use super::auth::AuthUser;
 use crate::db::repository::Repository;
-use crate::domain::{CalculationEngine, Platform, Transaction, TransactionType};
+use crate::domain::{CalculationEngine, Platform, Transaction, TransactionType, UserSettings};
 use crate::sync::SyncService;
 use axum::{
     Json,
@@ -501,4 +501,186 @@ Return empty array [] if no transactions found."#;
         "transactions": parsed,
         "usage": usage,
     })))
+}
+
+#[derive(Debug, Deserialize, Serialize)]
+pub struct UserSettingsPayload {
+    pub gmail_account: Option<String>,
+    pub gmail_app_password: Option<String>,
+    pub dob_day: Option<String>,
+    pub dob_month: Option<String>,
+    pub dob_year_ce: Option<String>,
+    pub dob_year_be: Option<String>,
+    pub national_id_last5: Option<String>,
+    pub custom_pdf_passwords: Option<String>,
+    pub auto_sync_enabled: Option<bool>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct TestEmailPayload {
+    pub gmail_account: Option<String>,
+    pub gmail_app_password: Option<String>,
+}
+
+/// GET /api/settings/profile
+pub async fn get_user_settings(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut settings = Repository::get_user_settings(&state.pool, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // Mask password in response for security
+    if settings.gmail_app_password.is_some() {
+        settings.gmail_app_password = Some("********".to_string());
+    }
+
+    Ok(Json(settings))
+}
+
+/// POST /api/settings/profile
+pub async fn update_user_settings(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<UserSettingsPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let settings = UserSettings {
+        user_id: auth.user_id.clone(),
+        gmail_account: payload.gmail_account,
+        gmail_app_password: payload.gmail_app_password,
+        dob_day: payload.dob_day,
+        dob_month: payload.dob_month,
+        dob_year_ce: payload.dob_year_ce,
+        dob_year_be: payload.dob_year_be,
+        national_id_last5: payload.national_id_last5,
+        custom_pdf_passwords: payload.custom_pdf_passwords,
+        auto_sync_enabled: payload.auto_sync_enabled.unwrap_or(false),
+        last_sync_at: None,
+    };
+
+    Repository::upsert_user_settings(&state.pool, &settings)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let mut current = Repository::get_user_settings(&state.pool, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if current.gmail_app_password.is_some() {
+        current.gmail_app_password = Some("********".to_string());
+    }
+
+    Ok(Json(current))
+}
+
+/// POST /api/email/test-connection
+pub async fn test_email_connection(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<TestEmailPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let settings = Repository::get_user_settings(&state.pool, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let gmail = payload
+        .gmail_account
+        .or(settings.gmail_account)
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "กรุณากรอก Gmail Account".to_string()))?;
+
+    let app_pwd = payload
+        .gmail_app_password
+        .filter(|p| p != "********" && !p.is_empty())
+        .or(settings.gmail_app_password)
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "กรุณากรอก Gmail App Password".to_string()))?;
+
+    let output = tokio::process::Command::new("python")
+        .args([
+            "scripts/email_harvester.py",
+            "--action",
+            "test",
+            "--gmail",
+            &gmail,
+            "--app-password",
+            &app_pwd,
+        ])
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to spawn harvester: {e}")))?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    if let Ok(json_res) = serde_json::from_str::<serde_json::Value>(stdout_str.trim()) {
+        Ok(Json(json_res))
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Error running email harvester: {stdout_str} {stderr_str}"),
+        ))
+    }
+}
+
+/// POST /api/email/sync
+pub async fn sync_email_statements(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let settings = Repository::get_user_settings(&state.pool, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    let gmail = settings
+        .gmail_account
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "ยังไม่ได้ตั้งค่า Gmail Account ใน Settings".to_string()))?;
+    let app_pwd = settings
+        .gmail_app_password
+        .ok_or_else(|| (StatusCode::BAD_REQUEST, "ยังไม่ได้ตั้งค่า Gmail App Password ใน Settings".to_string()))?;
+
+    let dob_day = settings.dob_day.unwrap_or_else(|| "01".to_string());
+    let dob_month = settings.dob_month.unwrap_or_else(|| "01".to_string());
+    let dob_year_ce = settings.dob_year_ce.unwrap_or_else(|| "1980".to_string());
+    let dob_year_be = settings.dob_year_be.unwrap_or_else(|| "2523".to_string());
+    let national_id_last5 = settings.national_id_last5.unwrap_or_default();
+
+    let output = tokio::process::Command::new("python")
+        .args([
+            "scripts/email_harvester.py",
+            "--action",
+            "sync",
+            "--user-id",
+            &auth.user_id,
+            "--gmail",
+            &gmail,
+            "--app-password",
+            &app_pwd,
+            "--dob-day",
+            &dob_day,
+            "--dob-month",
+            &dob_month,
+            "--dob-year-ce",
+            &dob_year_ce,
+            "--dob-year-be",
+            &dob_year_be,
+            "--national-id-last5",
+            &national_id_last5,
+            "--db-path",
+            "portfolio.db",
+            "--gemini-api-key",
+            &state.gemini_api_key,
+        ])
+        .output()
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to spawn harvester: {e}")))?;
+
+    let stdout_str = String::from_utf8_lossy(&output.stdout);
+    if let Ok(json_res) = serde_json::from_str::<serde_json::Value>(stdout_str.trim()) {
+        Ok(Json(json_res))
+    } else {
+        let stderr_str = String::from_utf8_lossy(&output.stderr);
+        Err((
+            StatusCode::BAD_GATEWAY,
+            format!("Error running email sync: {stdout_str} {stderr_str}"),
+        ))
+    }
 }

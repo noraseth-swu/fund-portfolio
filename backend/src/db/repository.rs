@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use super::DbPool;
-use crate::domain::{Platform, Transaction, TransactionType};
+use crate::domain::{Platform, Transaction, TransactionType, UserSettings};
 use crate::sec::models::{DailyNavInfo, FundProfile};
 use rust_decimal::Decimal;
 use sqlx::Row;
@@ -190,8 +190,16 @@ impl Repository {
                 ) AS proj_abbr_name,
                 (SELECT proj_name_th FROM funds WHERE proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id) LIMIT 1) AS proj_name_th,
                 COALESCE(
-                    (SELECT nav FROM fund_nav_history WHERE proj_id = t.proj_id ORDER BY nav_date DESC LIMIT 1),
-                    (SELECT last_nav FROM funds WHERE (proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id)) AND last_nav IS NOT NULL AND last_nav != '0' LIMIT 1),
+                    (
+                        SELECT COALESCE(NULLIF(NULLIF(nav, 'None'), ''), buy_price, sell_price)
+                        FROM fund_nav_history
+                        WHERE proj_id = t.proj_id
+                          AND ((nav IS NOT NULL AND nav != 'None' AND nav != '' AND nav != '0')
+                            OR (buy_price IS NOT NULL AND buy_price != 'None' AND buy_price != '' AND buy_price != '0'))
+                        ORDER BY nav_date DESC
+                        LIMIT 1
+                    ),
+                    (SELECT last_nav FROM funds WHERE (proj_id = t.proj_id OR LOWER(proj_abbr_name) = LOWER(t.proj_id) OR LOWER(proj_name_en) = LOWER(t.proj_id)) AND last_nav IS NOT NULL AND last_nav != '0' AND last_nav != 'None' LIMIT 1),
                     (
                         SELECT CAST(unit_price AS TEXT)
                         FROM transactions
@@ -430,6 +438,92 @@ impl Repository {
             .await?;
 
         Ok(res.rows_affected() > 0)
+    }
+
+    /// ดึงการตั้งค่าของผู้ใช้
+    pub async fn get_user_settings(
+        pool: &DbPool,
+        user_id: &str,
+    ) -> Result<UserSettings, Box<dyn std::error::Error + Send + Sync>> {
+        let row = sqlx::query(
+            r#"
+            SELECT user_id, gmail_account, gmail_app_password, dob_day, dob_month,
+                   dob_year_ce, dob_year_be, national_id_last5, custom_pdf_passwords,
+                   auto_sync_enabled, last_sync_at
+            FROM user_settings
+            WHERE user_id = ?1
+            "#,
+        )
+        .bind(user_id)
+        .fetch_optional(pool)
+        .await?;
+
+        if let Some(r) = row {
+            let auto_sync: i64 = r.get("auto_sync_enabled");
+            Ok(UserSettings {
+                user_id: r.get("user_id"),
+                gmail_account: r.get("gmail_account"),
+                gmail_app_password: r.get("gmail_app_password"),
+                dob_day: r.get("dob_day"),
+                dob_month: r.get("dob_month"),
+                dob_year_ce: r.get("dob_year_ce"),
+                dob_year_be: r.get("dob_year_be"),
+                national_id_last5: r.get("national_id_last5"),
+                custom_pdf_passwords: r.get("custom_pdf_passwords"),
+                auto_sync_enabled: auto_sync != 0,
+                last_sync_at: r.get("last_sync_at"),
+            })
+        } else {
+            Ok(UserSettings {
+                user_id: user_id.to_string(),
+                ..Default::default()
+            })
+        }
+    }
+
+    /// บันทึกหรืออัปเดตการตั้งค่าของผู้ใช้
+    pub async fn upsert_user_settings(
+        pool: &DbPool,
+        settings: &UserSettings,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        sqlx::query(
+            r#"
+            INSERT INTO user_settings (
+                user_id, gmail_account, gmail_app_password, dob_day, dob_month,
+                dob_year_ce, dob_year_be, national_id_last5, custom_pdf_passwords,
+                auto_sync_enabled, updated_at
+            )
+            VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, CURRENT_TIMESTAMP)
+            ON CONFLICT(user_id) DO UPDATE SET
+                gmail_account = COALESCE(?2, gmail_account),
+                gmail_app_password = CASE 
+                    WHEN ?3 IS NOT NULL AND ?3 != '********' AND ?3 != '' THEN ?3 
+                    ELSE gmail_app_password 
+                END,
+                dob_day = COALESCE(?4, dob_day),
+                dob_month = COALESCE(?5, dob_month),
+                dob_year_ce = COALESCE(?6, dob_year_ce),
+                dob_year_be = COALESCE(?7, dob_year_be),
+                national_id_last5 = COALESCE(?8, national_id_last5),
+                custom_pdf_passwords = COALESCE(?9, custom_pdf_passwords),
+                auto_sync_enabled = ?10,
+                updated_at = CURRENT_TIMESTAMP
+            "#,
+        )
+        .bind(&settings.user_id)
+        .bind(&settings.gmail_account)
+        .bind(&settings.gmail_app_password)
+        .bind(&settings.dob_day)
+        .bind(&settings.dob_month)
+        .bind(&settings.dob_year_ce)
+        .bind(&settings.dob_year_be)
+        .bind(&settings.national_id_last5)
+        .bind(&settings.custom_pdf_passwords)
+        .bind(if settings.auto_sync_enabled { 1 } else { 0 })
+        .execute(pool)
+        .await?;
+
+        Ok(())
     }
 }
 

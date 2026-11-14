@@ -48,6 +48,17 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Funds search & sync
         .route("/api/funds/search", get(handlers::search_funds))
         .route("/api/funds/sync", post(handlers::trigger_sync))
+        // User Settings & Profile
+        .route(
+            "/api/settings/profile",
+            get(handlers::get_user_settings).post(handlers::update_user_settings),
+        )
+        // Gmail Harvester Actions
+        .route(
+            "/api/email/test-connection",
+            post(handlers::test_email_connection),
+        )
+        .route("/api/email/sync", post(handlers::sync_email_statements))
         .layer(cors)
         .with_state(state);
 

@@ -206,3 +206,78 @@ export async function parseStatementAi(payload: {
   }
   return res.json();
 }
+
+export interface UserSettings {
+  user_id: string;
+  gmail_account?: string;
+  gmail_app_password?: string;
+  dob_day?: string;
+  dob_month?: string;
+  dob_year_ce?: string;
+  dob_year_be?: string;
+  national_id_last5?: string;
+  custom_pdf_passwords?: string;
+  auto_sync_enabled: boolean;
+  last_sync_at?: string;
+}
+
+export interface EmailTestResult {
+  success: boolean;
+  message?: string;
+  inbox_messages?: number;
+  error?: string;
+}
+
+export interface EmailSyncResult {
+  success: boolean;
+  emails_scanned: number;
+  attachments_found: number;
+  transactions_extracted: number;
+  transactions_inserted: number;
+  transactions_skipped: number;
+  details: string[];
+  error?: string;
+}
+
+export async function getUserSettings(): Promise<UserSettings> {
+  const res = await authFetch(`${API_BASE}/settings/profile`);
+  if (!res.ok) throw new Error('Failed to fetch user settings');
+  return res.json();
+}
+
+export async function updateUserSettings(settings: Partial<UserSettings>): Promise<UserSettings> {
+  const res = await authFetch(`${API_BASE}/settings/profile`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(settings),
+  });
+  if (!res.ok) throw new Error('Failed to update user settings');
+  return res.json();
+}
+
+export async function testEmailConnection(payload?: {
+  gmail_account?: string;
+  gmail_app_password?: string;
+}): Promise<EmailTestResult> {
+  const res = await authFetch(`${API_BASE}/email/test-connection`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload || {}),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to test email connection');
+  }
+  return res.json();
+}
+
+export async function syncEmailStatements(): Promise<EmailSyncResult> {
+  const res = await authFetch(`${API_BASE}/email/sync`, {
+    method: 'POST',
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to sync emails');
+  }
+  return res.json();
+}

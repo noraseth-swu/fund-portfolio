@@ -177,3 +177,19 @@ pub struct PortfolioSummary {
     pub holdings: Vec<HoldingPosition>,
     pub platforms: HashMap<String, PlatformSummary>,
 }
+
+/// การตั้งค่าโปรไฟล์ผู้ใช้สำหรับดึงข้อมูลและถอดรหัสเอกสารธนาคารอัตโนมัติ
+#[derive(Debug, Clone, Serialize, Deserialize, Default)]
+pub struct UserSettings {
+    pub user_id: String,
+    pub gmail_account: Option<String>,
+    pub gmail_app_password: Option<String>,
+    pub dob_day: Option<String>,
+    pub dob_month: Option<String>,
+    pub dob_year_ce: Option<String>,
+    pub dob_year_be: Option<String>,
+    pub national_id_last5: Option<String>,
+    pub custom_pdf_passwords: Option<String>,
+    pub auto_sync_enabled: bool,
+    pub last_sync_at: Option<String>,
+}

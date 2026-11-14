@@ -23,6 +23,7 @@ import {
   Globe,
   Eye,
   EyeOff,
+  Sliders,
 } from 'lucide-react';
 import { getPortfolio, triggerNavSync, setTokenGetter, type PortfolioSummary } from './lib/api';
 import { MetricCard } from './components/MetricCard';
@@ -40,6 +41,9 @@ const TransactionHistoryModal = lazy(() =>
 );
 const CsvImportModal = lazy(() =>
   import('./components/CsvImportModal').then((m) => ({ default: m.CsvImportModal }))
+);
+const SettingsModal = lazy(() =>
+  import('./components/SettingsModal').then((m) => ({ default: m.SettingsModal }))
 );
 
 const DashboardSkeleton: React.FC = () => (
@@ -74,6 +78,7 @@ export const App: React.FC = () => {
   const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [isHistoryModalOpen, setIsHistoryModalOpen] = useState(false);
   const [isCsvModalOpen, setIsCsvModalOpen] = useState(false);
+  const [isSettingsModalOpen, setIsSettingsModalOpen] = useState(false);
 
   const loadData = async () => {
     try {
@@ -336,6 +341,16 @@ export const App: React.FC = () => {
             >
               <History className="w-3.5 h-3.5" />
               <span className="hidden sm:inline">{t('transHistory')}</span>
+            </button>
+
+            {/* Settings & Gmail Auto-Sync */}
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              title={t('settings')}
+            >
+              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
+              <span className="hidden md:inline">{t('settings')}</span>
             </button>
 
             {/* Add Transaction button */}
@@ -606,6 +621,13 @@ export const App: React.FC = () => {
             isOpen={isCsvModalOpen}
             onClose={() => setIsCsvModalOpen(false)}
             onSuccess={handleImportSuccess}
+          />
+        )}
+        {isSettingsModalOpen && (
+          <SettingsModal
+            isOpen={isSettingsModalOpen}
+            onClose={() => setIsSettingsModalOpen(false)}
+            onSyncComplete={loadData}
           />
         )}
       </Suspense>

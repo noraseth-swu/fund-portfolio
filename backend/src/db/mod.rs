@@ -219,5 +219,27 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
     .execute(pool)
     .await;
 
+    // 5. ตาราง User Settings สำหรับ Gmail Auto-Sync และการสร้างรหัสผ่านถอดรหัส Statement PDF แต่ละธนาคาร
+    let _ = sqlx::query(
+        r#"
+        CREATE TABLE IF NOT EXISTS user_settings (
+            user_id TEXT PRIMARY KEY,
+            gmail_account TEXT,
+            gmail_app_password TEXT,
+            dob_day TEXT,
+            dob_month TEXT,
+            dob_year_ce TEXT,
+            dob_year_be TEXT,
+            national_id_last5 TEXT,
+            custom_pdf_passwords TEXT,
+            auto_sync_enabled INTEGER DEFAULT 0,
+            last_sync_at TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        "#,
+    )
+    .execute(pool)
+    .await;
+
     Ok(())
 }

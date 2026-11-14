@@ -22,6 +22,16 @@ where
     type Rejection = (StatusCode, String);
 
     async fn from_request_parts(parts: &mut Parts, _state: &S) -> Result<Self, Self::Rejection> {
+        // ดึง X-User-Id จาก Request Header หากมีระบุมา (สำหรับ Dev / Testing / Frontend Proxy)
+        if let Some(user_id_hdr) = parts.headers.get("x-user-id")
+            && let Ok(uid) = user_id_hdr.to_str()
+            && !uid.trim().is_empty()
+        {
+            return Ok(AuthUser {
+                user_id: uid.trim().to_string(),
+            });
+        }
+
         // ดึง Authorization: Bearer <token> จาก Request Header
         if let Some(auth_header) = parts.headers.get("authorization")
             && let Ok(auth_str) = auth_header.to_str()
