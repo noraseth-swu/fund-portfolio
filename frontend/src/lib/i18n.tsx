@@ -26,6 +26,9 @@ export const translations = {
     themeDark: 'โหมดมืด (Dark)',
     themeLight: 'โหมดสว่าง (Bright)',
     themeAuto: 'ตามระบบ (Auto)',
+    privacyModeOn: 'โหมดซ่อนตัวเลข (Privacy Mode: เปิด)',
+    privacyModeOff: 'โหมดแสดงตัวเลข (Privacy Mode: ปิด)',
+    privacyModeToggle: 'สลับโหมดซ่อนตัวเลข (Privacy)',
 
     // Metrics
     totalValue: 'มูลค่าพอร์ตลงทุนรวม',
@@ -170,6 +173,9 @@ export const translations = {
     themeDark: 'Dark Mode',
     themeLight: 'Bright Mode',
     themeAuto: 'System (Auto)',
+    privacyModeOn: 'Privacy Mode (Mask Amounts: ON)',
+    privacyModeOff: 'Privacy Mode (Mask Amounts: OFF)',
+    privacyModeToggle: 'Toggle Privacy Mode',
 
     // Metrics
     totalValue: 'Total Portfolio Value',

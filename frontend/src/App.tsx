@@ -21,6 +21,8 @@ import {
   Moon,
   Laptop,
   Globe,
+  Eye,
+  EyeOff,
 } from 'lucide-react';
 import { getPortfolio, triggerNavSync, setTokenGetter, type PortfolioSummary } from './lib/api';
 import { MetricCard } from './components/MetricCard';
@@ -114,12 +116,29 @@ export const App: React.FC = () => {
     return h.platform.toUpperCase() === selectedPlatform.toUpperCase();
   });
 
+  const [isPrivacyMode, setIsPrivacyMode] = useState<boolean>(() => {
+    return localStorage.getItem('fund_portfolio_privacy_mode') === 'true';
+  });
+
+  const togglePrivacyMode = () => {
+    setIsPrivacyMode((prev) => {
+      const next = !prev;
+      localStorage.setItem('fund_portfolio_privacy_mode', String(next));
+      return next;
+    });
+  };
+
   const formatMoney = (val?: string) => {
     if (!val) return '0.00';
     return parseFloat(val).toLocaleString(undefined, {
       minimumFractionDigits: 2,
       maximumFractionDigits: 2,
     });
+  };
+
+  const formatDisplayMoney = (val?: string) => {
+    if (isPrivacyMode) return '******';
+    return formatMoney(val);
   };
 
   const getUnrealizedTrend = (val?: string) => {
@@ -253,6 +272,23 @@ export const App: React.FC = () => {
               <span>{locale.toUpperCase()}</span>
             </button>
 
+            {/* Privacy Mode Toggle Button */}
+            <button
+              onClick={togglePrivacyMode}
+              className={`min-w-[32px] min-h-[32px] px-2.5 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 border text-xs font-semibold shadow-sm ${
+                isPrivacyMode
+                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-500 dark:text-amber-400 hover:bg-amber-500/25'
+                  : 'btn-header-secondary bg-slate-800/90 hover:bg-slate-700 border-slate-700/60 text-slate-300 hover:text-white'
+              }`}
+              title={isPrivacyMode ? t('privacyModeOn') : t('privacyModeOff')}
+              aria-label={t('privacyModeToggle')}
+            >
+              {isPrivacyMode ? <EyeOff className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
+              <span className="hidden lg:inline text-[11px] font-medium">
+                {isPrivacyMode ? (locale === 'th' ? 'ซ่อนตัวเลข' : 'Masked') : (locale === 'th' ? 'ความเป็นส่วนตัว' : 'Privacy')}
+              </span>
+            </button>
+
             {/* Sync NAV button */}
             <button
               onClick={handleSyncNav}
@@ -327,26 +363,26 @@ export const App: React.FC = () => {
             <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
               <MetricCard
                 title={t('totalValue')}
-                value={formatMoney(portfolio?.market_value)}
+                value={formatDisplayMoney(portfolio?.market_value)}
                 trend="neutral"
                 icon={<Wallet className="w-4 h-4" />}
               />
               <MetricCard
                 title={t('totalCost')}
-                value={formatMoney(portfolio?.total_cost)}
+                value={formatDisplayMoney(portfolio?.total_cost)}
                 trend="neutral"
                 icon={<Layers className="w-4 h-4" />}
               />
               <MetricCard
                 title={t('unrealizedPl')}
-                value={formatMoney(portfolio?.total_unrealized_pl)}
+                value={formatDisplayMoney(portfolio?.total_unrealized_pl)}
                 subValue={`${portfolio?.total_unrealized_pl_pct || '0'}%`}
                 trend={getUnrealizedTrend(portfolio?.total_unrealized_pl)}
                 icon={<TrendingUp className="w-4 h-4" />}
               />
               <MetricCard
                 title={t('realizedPl')}
-                value={formatMoney(portfolio?.total_realized_pl)}
+                value={formatDisplayMoney(portfolio?.total_realized_pl)}
                 trend={getUnrealizedTrend(portfolio?.total_realized_pl)}
                 icon={<TrendingUp className="w-4 h-4" />}
               />
@@ -392,7 +428,7 @@ export const App: React.FC = () => {
                             <div>
                               <div className="text-xs text-slate-400">{t('marketValHeader')}</div>
                               <div className="text-base font-bold text-slate-900 dark:text-white font-mono">
-                                {p ? formatMoney(p.market_value) : '0.00'}{' '}
+                                {p ? formatDisplayMoney(p.market_value) : '0.00'}{' '}
                                 <span className="text-[10px] text-slate-400">THB</span>
                               </div>
                             </div>
@@ -403,7 +439,11 @@ export const App: React.FC = () => {
                                   isPos ? 'text-emerald-600 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'
                                 }`}
                               >
-                                {p ? `${isPos ? '+' : ''}${formatMoney(upl)} (${uplPct}%)` : '-'}
+                                {p
+                                  ? isPrivacyMode
+                                    ? `****** (${isPos ? '+' : ''}${uplPct}%)`
+                                    : `${isPos ? '+' : ''}${formatMoney(upl)} (${uplPct}%)`
+                                  : '-'}
                               </div>
                             </div>
                           </div>
@@ -487,21 +527,22 @@ export const App: React.FC = () => {
                               <PlatformBadge platform={h.platform} />
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                              {parseFloat(h.total_units).toLocaleString(undefined, { minimumFractionDigits: 4 })}
+                              {isPrivacyMode
+                                ? '******'
+                                : parseFloat(h.total_units).toLocaleString(undefined, { minimumFractionDigits: 4 })}
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                              {parseFloat(h.avg_cost).toFixed(4)}
+                              {isPrivacyMode ? '******' : parseFloat(h.avg_cost).toFixed(4)}
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono text-indigo-700 dark:text-indigo-300 font-bold">
                               {parseFloat(h.current_nav).toFixed(4)}
                             </td>
                             <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
-                              {formatMoney(h.market_value)}
+                              {formatDisplayMoney(h.market_value)}
                             </td>
                             <td className="py-3.5 px-4 text-right whitespace-nowrap font-mono">
                               <span className={`font-bold ${isPos ? 'text-emerald-700 dark:text-emerald-400' : 'text-rose-600 dark:text-rose-400'}`}>
-                                {isPos ? '+' : ''}
-                                {formatMoney(h.unrealized_pl)}
+                                {isPrivacyMode ? '******' : `${isPos ? '+' : ''}${formatMoney(h.unrealized_pl)}`}
                               </span>
                               <span
                                 className={`text-[10px] block font-semibold ${
