@@ -420,7 +420,7 @@ def extract_transactions_with_gemini(text_content, api_key):
             data=json.dumps(payload).encode("utf-8"),
             headers={"Content-Type": "application/json"}
         )
-        for attempt in range(2):
+        for attempt in range(3):
             try:
                 with urllib.request.urlopen(req, timeout=30) as response:
                     res_data = json.loads(response.read().decode("utf-8"))
@@ -447,8 +447,9 @@ def extract_transactions_with_gemini(text_content, api_key):
                         return [], token_usage, True
             except urllib.error.HTTPError as e:
                 if e.code == 429:
-                    logger.warning("[!] Gemini %s 429 rate limit reached. Waiting 3s (attempt %d)...", model_name, attempt + 1)
-                    time.sleep(3)
+                    wait_sec = (attempt + 1) * 6
+                    logger.warning("[!] Gemini %s 429 rate limit reached. Backing off %ds (attempt %d/3)...", model_name, wait_sec, attempt + 1)
+                    time.sleep(wait_sec)
                     continue
                 else:
                     logger.warning("[!] Gemini %s error (%s). Trying next fallback model...", model_name, e)
@@ -889,6 +890,7 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                             gemini_txs = regex_txs
                         else:
                             cleaned_text = clean_pdf_boilerplate(pdf_text)
+                            time.sleep(2)  # Rate pacing to avoid 429 bursts (Gemini 15 RPM limit)
                             gemini_txs, usage, parse_success = extract_transactions_with_gemini(cleaned_text, gemini_api_key)
                             total_prompt_tokens += usage.get("prompt_tokens", 0)
                             total_candidates_tokens += usage.get("candidates_tokens", 0)
