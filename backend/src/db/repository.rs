@@ -16,8 +16,14 @@ impl Repository {
         amcs: &[crate::sec::models::AmcInfo],
     ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         for amc in amcs {
-            let name_th = amc.comp_name_th.clone().unwrap_or_else(|| amc.unique_id.clone());
-            let name_en = amc.comp_name_en.clone().unwrap_or_else(|| amc.unique_id.clone());
+            let name_th = amc
+                .comp_name_th
+                .clone()
+                .unwrap_or_else(|| amc.unique_id.clone());
+            let name_en = amc
+                .comp_name_en
+                .clone()
+                .unwrap_or_else(|| amc.unique_id.clone());
 
             sqlx::query(
                 r#"
@@ -159,7 +165,10 @@ impl Repository {
     pub async fn get_latest_nav_map(
         pool: &DbPool,
         user_id: &str,
-    ) -> Result<HashMap<String, (String, Option<String>, Decimal)>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<
+        HashMap<String, (String, Option<String>, Decimal)>,
+        Box<dyn std::error::Error + Send + Sync>,
+    > {
         let rows = sqlx::query(
             r#"
             SELECT 
@@ -326,7 +335,8 @@ impl Repository {
         pool: &DbPool,
         query: &str,
         limit: i64,
-    ) -> Result<Vec<crate::db::schema::FundSearchResult>, Box<dyn std::error::Error + Send + Sync>> {
+    ) -> Result<Vec<crate::db::schema::FundSearchResult>, Box<dyn std::error::Error + Send + Sync>>
+    {
         let pattern = format!("%{}%", query.trim());
         let rows = sqlx::query(
             r#"

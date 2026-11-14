@@ -3,13 +3,16 @@ import { createRoot } from 'react-dom/client'
 import { ClerkProvider } from '@clerk/react'
 import './index.css'
 import App from './App.tsx'
+import { I18nProvider } from './lib/i18n'
 
 const PUBLISHABLE_KEY = import.meta.env.VITE_CLERK_PUBLISHABLE_KEY || 'pk_test_dXNlZnVsLW94LTI4MjkuY2xlcmsuYWNjb3VudHMuZGV2JA';
 
 createRoot(document.getElementById('root')!).render(
   <StrictMode>
     <ClerkProvider publishableKey={PUBLISHABLE_KEY} afterSignOutUrl="/">
-      <App />
+      <I18nProvider>
+        <App />
+      </I18nProvider>
     </ClerkProvider>
   </StrictMode>,
 )

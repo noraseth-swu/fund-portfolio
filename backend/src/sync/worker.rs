@@ -1,4 +1,4 @@
-use crate::db::{repository::Repository, DbPool};
+use crate::db::{DbPool, repository::Repository};
 use crate::sec::SecClient;
 use std::sync::Arc;
 use std::time::Duration;
@@ -21,7 +21,10 @@ impl SyncService {
             return Ok(0);
         }
 
-        println!("[Background Sync] Found {} active funds in portfolio to update NAV...", held_ids.len());
+        println!(
+            "[Background Sync] Found {} active funds in portfolio to update NAV...",
+            held_ids.len()
+        );
         let mut client = SecClient::new(api_key.to_string());
         let mut updated_count = 0;
 
@@ -30,13 +33,23 @@ impl SyncService {
                 Ok(items) if !items.is_empty() => {
                     Repository::upsert_nav_history(pool, proj_id, &items).await?;
                     updated_count += 1;
-                    println!("[Background Sync] Updated NAV for fund {}: {} records", proj_id, items.len());
+                    println!(
+                        "[Background Sync] Updated NAV for fund {}: {} records",
+                        proj_id,
+                        items.len()
+                    );
                 }
                 Ok(_) => {
-                    println!("[Background Sync] No new NAV records returned for {}", proj_id);
+                    println!(
+                        "[Background Sync] No new NAV records returned for {}",
+                        proj_id
+                    );
                 }
                 Err(e) => {
-                    eprintln!("[Background Sync Error] Failed to fetch NAV for {}: {}", proj_id, e);
+                    eprintln!(
+                        "[Background Sync Error] Failed to fetch NAV for {}: {}",
+                        proj_id, e
+                    );
                 }
             }
         }

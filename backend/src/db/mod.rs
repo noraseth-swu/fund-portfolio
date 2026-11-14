@@ -7,7 +7,9 @@ use std::str::FromStr;
 
 pub type DbPool = Pool<Sqlite>;
 
-pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn std::error::Error + Send + Sync>> {
+pub async fn init_db(
+    database_url: &str,
+) -> Result<DbPool, Box<dyn std::error::Error + Send + Sync>> {
     // กำหนด Options: สร้างไฟล์ถ้ายังไม่มี, เปิดโหมด WAL และ Normal Sync สำหรับความเร็วระดับ Sub-millisecond
     let connection_options = SqliteConnectOptions::from_str(database_url)?
         .create_if_missing(true)
@@ -27,23 +29,90 @@ pub async fn init_db(database_url: &str) -> Result<DbPool, Box<dyn std::error::E
     Ok(pool)
 }
 
-async fn seed_default_brokers(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+async fn seed_default_brokers(
+    pool: &DbPool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let defaults = vec![
-        ("KBANK", "ธนาคารกสิกรไทย (K PLUS / K-MyFunds)", "Kasikornbank", "RETAIL"),
-        ("SCB", "ธนาคารไทยพาณิชย์ (SCB EASY)", "Siam Commercial Bank", "RETAIL"),
-        ("INNOVESTX", "บล. อินโนเวสท์ เอกซ์ (InnovestX)", "InnovestX Securities", "RETAIL"),
-        ("TTB", "ธนาคารทหารไทยธนชาต (ttb touch / smart port)", "TMBThanachart Bank", "RETAIL"),
-        ("DIME", "บล. เคเคพี ไดม์ (Dime!)", "KKP Dime Securities", "RETAIL"),
+        (
+            "KBANK",
+            "ธนาคารกสิกรไทย (K PLUS / K-MyFunds)",
+            "Kasikornbank",
+            "RETAIL",
+        ),
+        (
+            "SCB",
+            "ธนาคารไทยพาณิชย์ (SCB EASY)",
+            "Siam Commercial Bank",
+            "RETAIL",
+        ),
+        (
+            "INNOVESTX",
+            "บล. อินโนเวสท์ เอกซ์ (InnovestX)",
+            "InnovestX Securities",
+            "RETAIL",
+        ),
+        (
+            "TTB",
+            "ธนาคารทหารไทยธนชาต (ttb touch / smart port)",
+            "TMBThanachart Bank",
+            "RETAIL",
+        ),
+        (
+            "DIME",
+            "บล. เคเคพี ไดม์ (Dime!)",
+            "KKP Dime Securities",
+            "RETAIL",
+        ),
         ("FINNOMENA", "ฟินโนมีนา (Finnomena)", "Finnomena", "RETAIL"),
-        ("STREAMING", "Streaming for Fund", "Settrade Streaming for Fund", "RETAIL"),
-        ("BAY", "ธนาคารกรุงศรีอยุธยา (KMA / Krungsri)", "Bank of Ayudhya", "RETAIL"),
-        ("BBL", "ธนาคารกรุงเทพ (Bangkok Bank Mobile)", "Bangkok Bank", "RETAIL"),
-        ("KTB", "ธนาคารกรุงไทย (Krungthai NEXT)", "Krungthai Bank", "RETAIL"),
-        ("KKP", "ธนาคารเกียรตินาคินภัทร / บล.เกียรตินาคินภัทร", "Kiatnakin Phatra", "RETAIL"),
+        (
+            "STREAMING",
+            "Streaming for Fund",
+            "Settrade Streaming for Fund",
+            "RETAIL",
+        ),
+        (
+            "BAY",
+            "ธนาคารกรุงศรีอยุธยา (KMA / Krungsri)",
+            "Bank of Ayudhya",
+            "RETAIL",
+        ),
+        (
+            "BBL",
+            "ธนาคารกรุงเทพ (Bangkok Bank Mobile)",
+            "Bangkok Bank",
+            "RETAIL",
+        ),
+        (
+            "KTB",
+            "ธนาคารกรุงไทย (Krungthai NEXT)",
+            "Krungthai Bank",
+            "RETAIL",
+        ),
+        (
+            "KKP",
+            "ธนาคารเกียรตินาคินภัทร / บล.เกียรตินาคินภัทร",
+            "Kiatnakin Phatra",
+            "RETAIL",
+        ),
         ("PI", "บล. พาย (Pi Financial)", "Pi Securities", "RETAIL"),
-        ("YUANTA", "บล. หยวนต้า (ประเทศไทย)", "Yuanta Securities", "RETAIL"),
-        ("PHILLIP", "บล. ฟิลลิป (ประเทศไทย)", "Phillip Securities", "RETAIL"),
-        ("MAYBANK", "บล. เมย์แบงก์ (ประเทศไทย)", "Maybank Securities", "RETAIL"),
+        (
+            "YUANTA",
+            "บล. หยวนต้า (ประเทศไทย)",
+            "Yuanta Securities",
+            "RETAIL",
+        ),
+        (
+            "PHILLIP",
+            "บล. ฟิลลิป (ประเทศไทย)",
+            "Phillip Securities",
+            "RETAIL",
+        ),
+        (
+            "MAYBANK",
+            "บล. เมย์แบงก์ (ประเทศไทย)",
+            "Maybank Securities",
+            "RETAIL",
+        ),
     ];
 
     for (code, name_th, name_en, cat) in defaults {
@@ -126,9 +195,11 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
     .await?;
 
     // Migration: เพิ่มคอลัมน์ user_id ถ้ายังไม่มีในฐานข้อมูลเดิม
-    let _ = sqlx::query("ALTER TABLE transactions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default_user'")
-        .execute(pool)
-        .await;
+    let _ = sqlx::query(
+        "ALTER TABLE transactions ADD COLUMN user_id TEXT NOT NULL DEFAULT 'default_user'",
+    )
+    .execute(pool)
+    .await;
 
     // สร้าง Index บน user_id หลังจากมั่นใจว่ามีคอลัมน์แล้ว
     let _ = sqlx::query("CREATE INDEX IF NOT EXISTS idx_trans_user ON transactions(user_id)")

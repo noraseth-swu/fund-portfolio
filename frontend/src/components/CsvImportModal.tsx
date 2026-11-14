@@ -570,7 +570,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
               <RefreshCw className="w-7 h-7 animate-spin" />
             </div>
             <p className="text-base font-bold text-slate-900 dark:text-white mb-1.5">{t('processingAi')}</p>
-            <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium animate-pulse">{loadingStatus || 'กำลังประมวลผล...'}</p>
+            <p className="text-xs text-indigo-700 dark:text-indigo-300 font-medium animate-pulse">{loadingStatus || t('loading')}</p>
           </div>
         )}
 

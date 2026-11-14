@@ -1,8 +1,9 @@
-import { useState } from 'react';
+import React, { createContext, useContext, useState, useEffect } from 'react';
 
 export type Locale = 'th' | 'en';
 
 const LOCALE_KEY = 'fund_portfolio_locale';
+const LOCALE_CHANGE_EVENT = 'fund_portfolio_locale_change';
 
 export const translations = {
   th: {
@@ -301,16 +302,75 @@ export function getInitialLocale(): Locale {
   return 'th';
 }
 
-export function useI18n() {
-  const [locale, setLocale] = useState<Locale>(getInitialLocale);
+interface I18nContextType {
+  locale: Locale;
+  setLocale: (newLocale: Locale) => void;
+  t: (key: keyof typeof translations['th'], params?: Record<string, string | number>) => string;
+}
 
-  const changeLocale = (newLocale: Locale) => {
-    setLocale(newLocale);
+const I18nContext = createContext<I18nContextType | null>(null);
+
+export const I18nProvider: React.FC<{ children: React.ReactNode }> = ({ children }) => {
+  const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
+
+  useEffect(() => {
+    const handleSync = (e: any) => {
+      if (e.detail && (e.detail === 'th' || e.detail === 'en')) {
+        setLocaleState(e.detail);
+      }
+    };
+    window.addEventListener(LOCALE_CHANGE_EVENT, handleSync);
+    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleSync);
+  }, []);
+
+  const setLocale = (newLocale: Locale) => {
+    setLocaleState(newLocale);
     localStorage.setItem(LOCALE_KEY, newLocale);
+    window.dispatchEvent(new CustomEvent(LOCALE_CHANGE_EVENT, { detail: newLocale }));
   };
 
   const t = (key: keyof typeof translations['th'], params?: Record<string, string | number>): string => {
-    let str = translations[locale][key] || translations['th'][key] || String(key);
+    let str = translations[locale]?.[key] || translations['th'][key] || String(key);
+    if (params) {
+      Object.entries(params).forEach(([k, v]) => {
+        str = str.replace(`{${k}}`, String(v));
+      });
+    }
+    return str;
+  };
+
+  return (
+    <I18nContext.Provider value={{ locale, setLocale, t }}>
+      {children}
+    </I18nContext.Provider>
+  );
+};
+
+export function useI18n() {
+  const context = useContext(I18nContext);
+  if (context) return context;
+
+  // Global event fallback for components rendered outside I18nProvider
+  const [locale, setLocaleState] = useState<Locale>(getInitialLocale);
+
+  useEffect(() => {
+    const handleSync = (e: any) => {
+      if (e.detail && (e.detail === 'th' || e.detail === 'en')) {
+        setLocaleState(e.detail);
+      }
+    };
+    window.addEventListener(LOCALE_CHANGE_EVENT, handleSync);
+    return () => window.removeEventListener(LOCALE_CHANGE_EVENT, handleSync);
+  }, []);
+
+  const changeLocale = (newLocale: Locale) => {
+    setLocaleState(newLocale);
+    localStorage.setItem(LOCALE_KEY, newLocale);
+    window.dispatchEvent(new CustomEvent(LOCALE_CHANGE_EVENT, { detail: newLocale }));
+  };
+
+  const t = (key: keyof typeof translations['th'], params?: Record<string, string | number>): string => {
+    let str = translations[locale]?.[key] || translations['th'][key] || String(key);
     if (params) {
       Object.entries(params).forEach(([k, v]) => {
         str = str.replace(`{${k}}`, String(v));

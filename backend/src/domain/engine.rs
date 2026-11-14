@@ -1,4 +1,6 @@
-use super::models::{HoldingPosition, PlatformSummary, PortfolioSummary, Transaction, TransactionType};
+use super::models::{
+    HoldingPosition, PlatformSummary, PortfolioSummary, Transaction, TransactionType,
+};
 use rust_decimal::Decimal;
 use std::collections::HashMap;
 
@@ -34,10 +36,13 @@ impl CalculationEngine {
             let platform_str = tx.platform.as_str().to_string();
             let key = (tx.proj_id.clone(), platform_str.clone());
 
-            let (abbr, name_th, _) = nav_map
-                .get(&tx.proj_id)
-                .cloned()
-                .unwrap_or_else(|| (tx.fund_abbr.clone().unwrap_or_else(|| tx.proj_id.clone()), None, Decimal::ZERO));
+            let (abbr, name_th, _) = nav_map.get(&tx.proj_id).cloned().unwrap_or_else(|| {
+                (
+                    tx.fund_abbr.clone().unwrap_or_else(|| tx.proj_id.clone()),
+                    None,
+                    Decimal::ZERO,
+                )
+            });
 
             let tracker = trackers.entry(key).or_insert_with(|| PositionTracker {
                 proj_id: tx.proj_id.clone(),
@@ -122,7 +127,11 @@ impl CalculationEngine {
             portfolio_dividend += tracker.dividend;
 
             // รวบรวมข้อมูลตามแพลตฟอร์ม
-            let entry = platform_groups.entry(tracker.platform.clone()).or_insert((Decimal::ZERO, Decimal::ZERO, Decimal::ZERO));
+            let entry = platform_groups.entry(tracker.platform.clone()).or_insert((
+                Decimal::ZERO,
+                Decimal::ZERO,
+                Decimal::ZERO,
+            ));
             entry.0 += tracker.total_cost;
             entry.1 += market_value;
             entry.2 += tracker.realized_pl;
@@ -237,7 +246,14 @@ mod tests {
 
         // NAV ปัจจุบันอยู่ที่ 15.0
         let mut nav_map = HashMap::new();
-        nav_map.insert("K-USA".to_string(), ("K-USA".to_string(), Some("กองทุนเค ยูเอสเอ".to_string()), dec!(15.0)));
+        nav_map.insert(
+            "K-USA".to_string(),
+            (
+                "K-USA".to_string(),
+                Some("กองทุนเค ยูเอสเอ".to_string()),
+                dec!(15.0),
+            ),
+        );
 
         let summary = CalculationEngine::calculate_portfolio(vec![tx1, tx2], &nav_map);
 
@@ -281,7 +297,10 @@ mod tests {
         };
 
         let mut nav_map = HashMap::new();
-        nav_map.insert("SCBGOLD".to_string(), ("SCBGOLD".to_string(), None, dec!(13.0)));
+        nav_map.insert(
+            "SCBGOLD".to_string(),
+            ("SCBGOLD".to_string(), None, dec!(13.0)),
+        );
 
         let summary = CalculationEngine::calculate_portfolio(vec![tx_buy, tx_sell], &nav_map);
 

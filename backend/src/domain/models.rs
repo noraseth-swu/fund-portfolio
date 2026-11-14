@@ -77,11 +77,11 @@ pub struct Transaction {
     pub fund_abbr: Option<String>,
     pub platform: Platform,
     pub trans_type: TransactionType,
-    pub trans_date: String, // YYYY-MM-DD
-    pub units: Decimal,     // จำนวนหน่วยลงทุน
-    pub unit_price: Decimal,// NAV ณ วันที่ซื้อขาย
+    pub trans_date: String,    // YYYY-MM-DD
+    pub units: Decimal,        // จำนวนหน่วยลงทุน
+    pub unit_price: Decimal,   // NAV ณ วันที่ซื้อขาย
     pub total_amount: Decimal, // มูลค่ารวม (บาท)
-    pub fee: Decimal,       // ค่าธรรมเนียม (ถ้ามี)
+    pub fee: Decimal,          // ค่าธรรมเนียม (ถ้ามี)
     pub note: Option<String>,
 }
 
@@ -91,16 +91,16 @@ pub struct HoldingPosition {
     pub proj_id: String,
     pub fund_abbr: String,
     pub fund_name_th: Option<String>,
-    pub platform: String,            // "KBANK", "DIME", หรือ "ALL"
-    pub total_units: Decimal,        // จำนวนหน่วยคงเหลือ
-    pub avg_cost: Decimal,           // ต้นทุนเฉลี่ยต่อหน่วย (บาท)
-    pub total_cost: Decimal,         // ต้นทุนรวมคงเหลือ (บาท)
-    pub current_nav: Decimal,        // ราคา NAV ล่าสุด
-    pub market_value: Decimal,       // มูลค่าปัจจุบัน (บาท) = total_units * current_nav
-    pub unrealized_pl: Decimal,      // กำไร/ขาดทุนที่ยังไม่เกิดขึ้น (บาท) = market_value - total_cost
-    pub unrealized_pl_pct: Decimal,  // ผลตอบแทน % = (unrealized_pl / total_cost) * 100
-    pub realized_pl: Decimal,        // กำไร/ขาดทุนที่เกิดขึ้นแล้วจากการขาย (บาท)
-    pub total_dividend: Decimal,     // เงินปันผลสะสมที่ได้รับ (บาท)
+    pub platform: String,           // "KBANK", "DIME", หรือ "ALL"
+    pub total_units: Decimal,       // จำนวนหน่วยคงเหลือ
+    pub avg_cost: Decimal,          // ต้นทุนเฉลี่ยต่อหน่วย (บาท)
+    pub total_cost: Decimal,        // ต้นทุนรวมคงเหลือ (บาท)
+    pub current_nav: Decimal,       // ราคา NAV ล่าสุด
+    pub market_value: Decimal,      // มูลค่าปัจจุบัน (บาท) = total_units * current_nav
+    pub unrealized_pl: Decimal,     // กำไร/ขาดทุนที่ยังไม่เกิดขึ้น (บาท) = market_value - total_cost
+    pub unrealized_pl_pct: Decimal, // ผลตอบแทน % = (unrealized_pl / total_cost) * 100
+    pub realized_pl: Decimal,       // กำไร/ขาดทุนที่เกิดขึ้นแล้วจากการขาย (บาท)
+    pub total_dividend: Decimal,    // เงินปันผลสะสมที่ได้รับ (บาท)
 }
 
 /// สรุปภาพรวมของแต่ละแพลตฟอร์ม (KBank, ttb, Dime, SCB)

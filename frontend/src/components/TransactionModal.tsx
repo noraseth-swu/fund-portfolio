@@ -10,7 +10,7 @@ interface Props {
 }
 
 export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) => {
-  const { t } = useI18n();
+  const { locale, t } = useI18n();
   const [platform, setPlatform] = useState('KBANK');
   const [transType, setTransType] = useState('BUY');
   const [transDate, setTransDate] = useState(() => new Date().toISOString().split('T')[0]);
@@ -178,7 +178,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
                   .filter((b) => b.category === 'RETAIL')
                   .map((b) => (
                     <option key={b.code} value={b.code}>
-                      {b.code} - {b.name_th}
+                      {b.code} - {locale === 'en' ? (b.name_en || b.name_th) : b.name_th}
                     </option>
                   ))}
               </optgroup>
@@ -187,7 +187,7 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
                   .filter((b) => b.category === 'AMC')
                   .map((b) => (
                     <option key={b.code} value={b.code}>
-                      {b.name_th} ({b.name_en})
+                      {locale === 'en' ? (b.name_en || b.name_th) : b.name_th} ({b.code})
                     </option>
                   ))}
               </optgroup>
@@ -251,7 +251,9 @@ export const TransactionModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }
                   >
                     <div>
                       <span className="font-bold text-white mr-2">{f.proj_abbr_name || f.proj_id}</span>
-                      <span className="text-slate-400 text-xs block truncate max-w-xs">{f.proj_name_th}</span>
+                      <span className="text-slate-400 text-xs block truncate max-w-xs">
+                        {locale === 'en' ? (f.proj_name_en || f.proj_name_th) : f.proj_name_th}
+                      </span>
                     </div>
                     {f.last_nav && <span className="text-emerald-400 font-mono text-xs">{f.last_nav} THB</span>}
                   </button>

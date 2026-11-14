@@ -4,7 +4,7 @@ mod domain;
 mod sec;
 mod sync;
 
-use api::{create_router, AppState};
+use api::{AppState, create_router};
 use db::{init_db, repository::Repository};
 use dotenvy::dotenv;
 use sec::SecClient;
@@ -35,7 +35,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
         // Sync AMCs จาก SEC
         if let Ok(amcs) = sec_client.get_amc_list().await {
             let _ = Repository::upsert_amc_brokers(&pool, &amcs).await;
-            println!("[✓] Synced {} AMCs from SEC into Brokers Master Data.", amcs.len());
+            println!(
+                "[✓] Synced {} AMCs from SEC into Brokers Master Data.",
+                amcs.len()
+            );
         }
 
         let funds_exist = Repository::search_funds(&pool, "", 1).await?.len();
@@ -44,7 +47,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
             match sec_client.get_fund_profiles(None).await {
                 Ok(paged) => {
                     Repository::upsert_funds(&pool, &paged.items).await?;
-                    println!("[✓] Cached initial {} fund profiles to SQLite.", paged.items.len());
+                    println!(
+                        "[✓] Cached initial {} fund profiles to SQLite.",
+                        paged.items.len()
+                    );
                 }
                 Err(e) => eprintln!("[!] Initial fund seed skipped: {e}"),
             }
@@ -77,9 +83,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let listener = tokio::net::TcpListener::bind(&addr).await?;
     println!("[✓] Server is ready to receive requests!");
     println!("    • Health check:  http://localhost:{}/api/health", port);
-    println!("    • Portfolio API: http://localhost:{}/api/portfolio", port);
-    println!("    • Transactions:  http://localhost:{}/api/transactions", port);
-    println!("    • Fund Search:   http://localhost:{}/api/funds/search?q=K-USA", port);
+    println!(
+        "    • Portfolio API: http://localhost:{}/api/portfolio",
+        port
+    );
+    println!(
+        "    • Transactions:  http://localhost:{}/api/transactions",
+        port
+    );
+    println!(
+        "    • Fund Search:   http://localhost:{}/api/funds/search?q=K-USA",
+        port
+    );
 
     axum::serve(listener, app).await?;
 

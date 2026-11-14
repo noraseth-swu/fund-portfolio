@@ -165,24 +165,37 @@ impl SecClient {
     }
 
     /// ดึงรายชื่อ บลจ. ทั้งหมด (Asset Management Companies) จาก v2
-    pub async fn get_amc_list(&mut self) -> Result<Vec<AmcInfo>, Box<dyn std::error::Error + Send + Sync>> {
-        let resp = self.get_paged_single::<AmcInfo>("/v2/fund/general-info/amcs", &[]).await?;
+    pub async fn get_amc_list(
+        &mut self,
+    ) -> Result<Vec<AmcInfo>, Box<dyn std::error::Error + Send + Sync>> {
+        let resp = self
+            .get_paged_single::<AmcInfo>("/v2/fund/general-info/amcs", &[])
+            .await?;
         Ok(resp.items)
     }
 
     /// ดึงข้อมูลรายชื่อกองทุน (Fund Profiles) 1 หน้า (100 รายการ) หรือระบุ cursor
-    pub async fn get_fund_profiles(&mut self, cursor: Option<&str>) -> Result<SecPagedResponse<FundProfile>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_fund_profiles(
+        &mut self,
+        cursor: Option<&str>,
+    ) -> Result<SecPagedResponse<FundProfile>, Box<dyn std::error::Error + Send + Sync>> {
         let mut query = vec![("page_size", "100")];
         if let Some(c) = cursor {
             query.push(("next_cursor", c));
         }
-        self.get_paged_single::<FundProfile>("/v2/fund/general-info/profiles", &query).await
+        self.get_paged_single::<FundProfile>("/v2/fund/general-info/profiles", &query)
+            .await
     }
 
     /// ดึงข้อมูลประวัติ NAV รายวันสำหรับกองทุนที่ระบุ (proj_id)
-    pub async fn get_fund_nav_history(&mut self, proj_id: &str) -> Result<Vec<DailyNavInfo>, Box<dyn std::error::Error + Send + Sync>> {
+    pub async fn get_fund_nav_history(
+        &mut self,
+        proj_id: &str,
+    ) -> Result<Vec<DailyNavInfo>, Box<dyn std::error::Error + Send + Sync>> {
         let query = [("proj_id", proj_id)];
-        let resp = self.get_paged_single::<DailyNavInfo>("/v2/fund/daily-info/nav", &query).await?;
+        let resp = self
+            .get_paged_single::<DailyNavInfo>("/v2/fund/daily-info/nav", &query)
+            .await?;
         Ok(resp.items)
     }
 }

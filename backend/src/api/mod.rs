@@ -3,8 +3,8 @@ pub mod handlers;
 
 use crate::db::DbPool;
 use axum::{
-    routing::{delete, get, post},
     Router,
+    routing::{delete, get, post},
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -35,8 +35,14 @@ pub fn create_router(state: Arc<AppState>) -> Router {
             "/api/transactions",
             get(handlers::get_transactions).post(handlers::create_transaction),
         )
-        .route("/api/transactions/batch", post(handlers::create_transactions_batch))
-        .route("/api/transactions/{id}", delete(handlers::delete_transaction))
+        .route(
+            "/api/transactions/batch",
+            post(handlers::create_transactions_batch),
+        )
+        .route(
+            "/api/transactions/{id}",
+            delete(handlers::delete_transaction),
+        )
         // Statement AI Parser (PDF / Text via Gemini)
         .route("/api/parse/statement", post(handlers::parse_statement))
         // Funds search & sync
@@ -55,7 +61,8 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     };
 
     if let Some(path) = dist_path {
-        let serve_dir = ServeDir::new(path).fallback(ServeFile::new(format!("{}/index.html", path)));
+        let serve_dir =
+            ServeDir::new(path).fallback(ServeFile::new(format!("{}/index.html", path)));
         router = router.fallback_service(serve_dir);
     }
 
