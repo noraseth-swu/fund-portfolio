@@ -272,6 +272,26 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, policy_code)
         );
+
+        -- 9. ตารางบันทึกประวัติธุรกรรมหุ้นต่างประเทศ (Offshore Stocks e.g. Dime US Stocks) แยกเฉพาะ
+        CREATE TABLE IF NOT EXISTS stock_transactions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT 'default_user',
+            idempotency_key TEXT,
+            ticker TEXT NOT NULL,
+            company_name TEXT,
+            platform TEXT NOT NULL,
+            trans_type TEXT NOT NULL,
+            trans_date TEXT NOT NULL,
+            shares TEXT NOT NULL,
+            price_usd TEXT NOT NULL,
+            total_thb TEXT NOT NULL,
+            exchange_rate TEXT,
+            fee_thb TEXT DEFAULT '0.00',
+            note TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, idempotency_key)
+        );
         "#,
     )
     .execute(pool)

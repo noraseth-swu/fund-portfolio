@@ -661,6 +661,26 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             UNIQUE(user_id, policy_code)
         );
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS stock_transactions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT 'default_user',
+            idempotency_key TEXT,
+            ticker TEXT NOT NULL,
+            company_name TEXT,
+            platform TEXT NOT NULL,
+            trans_type TEXT NOT NULL,
+            trans_date TEXT NOT NULL,
+            shares TEXT NOT NULL,
+            price_usd TEXT NOT NULL,
+            total_thb TEXT NOT NULL,
+            exchange_rate TEXT,
+            fee_thb TEXT DEFAULT '0.00',
+            note TEXT,
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, idempotency_key)
+        );
+    """)
     conn.commit()
     
     import pypdf
@@ -970,6 +990,49 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                             continue
 
                         pdf_tx_count = 0
+                        is_offshore_stock = "offshore" in filename.lower() or "dimeos" in filename.lower()
+                        if is_offshore_stock:
+                            for tx in gemini_txs:
+                                try:
+                                    ticker = str(tx.get("fund_code") or tx.get("ticker") or "").upper().strip()
+                                    if not ticker or ticker.lower() in BLACKLISTED_NAMES:
+                                        continue
+                                    shares = safe_float(tx.get("units"), 0.0)
+                                    price_usd = safe_float(tx.get("unit_price"), 0.0)
+                                    total_thb = safe_float(tx.get("total_amount"), 0.0)
+                                    fee_thb = safe_float(tx.get("fee"), 0.0)
+                                    if total_thb <= 0 and shares <= 0:
+                                        continue
+                                    t_date = str(tx.get("trans_date") or datetime.now().strftime("%Y-%m-%d"))
+                                    t_type = str(tx.get("trans_type") or "BUY").upper()
+                                    note = str(tx.get("note") or f"Imported from {filename}")
+                                    
+                                    exchange_rate = 0.0
+                                    if shares > 0 and price_usd > 0:
+                                        exchange_rate = round(total_thb / (shares * price_usd), 2)
+                                    
+                                    import uuid
+                                    stk_id = f"tx_stk_{uuid.uuid4().hex[:12]}"
+                                    idem_key = compute_idempotency_key(user_id, "DIME_STOCK", ticker, t_date, t_type, shares, total_thb, note)
+                                    c.execute("""
+                                        INSERT INTO stock_transactions (id, user_id, idempotency_key, ticker, company_name, platform, trans_type, trans_date, shares, price_usd, total_thb, exchange_rate, fee_thb, note)
+                                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                                        ON CONFLICT(user_id, idempotency_key) DO NOTHING
+                                    """, (stk_id, user_id, idem_key, ticker, ticker, "DIME", t_type, t_date, f"{shares:.4f}", f"{price_usd:.4f}", f"{total_thb:.2f}", f"{exchange_rate:.2f}", f"{fee_thb:.2f}", note))
+                                    if c.rowcount > 0:
+                                        inserted_count += 1
+                                        logger.info("[+] [STOCK] Inserted %s %s (%.4f shares @ $%.2f, %.2f THB) into stock_transactions from %s", t_date, ticker, shares, price_usd, total_thb, filename)
+                                    total_txs_extracted += 1
+                                    email_tx_count += 1
+                                    pdf_tx_count += 1
+                                except Exception as ste:
+                                    logger.error("[STOCK] Error inserting stock tx from %s: %s", filename, ste)
+                            
+                            c.execute("INSERT OR IGNORE INTO processed_attachments (file_hash, filename, tx_count) VALUES (?, ?, ?)",
+                                      (pdf_hash, filename, pdf_tx_count))
+                            conn.commit()
+                            continue
+
                         for tx in gemini_txs:
                             try:
                                 fcode = tx.get("fund_code", "")
