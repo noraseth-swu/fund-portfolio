@@ -26,12 +26,22 @@ import urllib.request
 import urllib.error
 
 # Structured Logging by Level (Observability & Production Standard)
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(levelname)s] %(message)s",
-    datefmt="%Y-%m-%d %H:%M:%S"
-)
 logger = logging.getLogger("email_harvester")
+logger.setLevel(logging.INFO)
+
+formatter = logging.Formatter("%(asctime)s [%(levelname)s] %(message)s", datefmt="%Y-%m-%d %H:%M:%S")
+
+console_handler = logging.StreamHandler(sys.stderr)
+console_handler.setFormatter(formatter)
+logger.addHandler(console_handler)
+
+try:
+    log_file_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "email_sync.log")
+    file_handler = logging.FileHandler(log_file_path, mode="a", encoding="utf-8")
+    file_handler.setFormatter(formatter)
+    logger.addHandler(file_handler)
+except Exception:
+    pass
 
 MONTH_NAMES_EN = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"]
 
@@ -278,19 +288,30 @@ def try_regex_parse_confirmation(pdf_text, broker_tag):
 def extract_transactions_with_gemini(text_content, api_key):
     """
     Call Gemini API to extract mutual fund transactions from unstructured text
-    Returns: (transactions_list, token_usage_dict)
+    Returns: (transactions_list, token_usage_dict, success_bool)
     """
     empty_usage = {"prompt_tokens": 0, "candidates_tokens": 0, "total_tokens": 0}
     if not api_key:
-        if os.path.exists(".env"):
-            with open(".env", "r", encoding="utf-8") as f:
-                for line in f:
-                    if line.startswith("GEMINI_API_KEY="):
-                        api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+        api_key = os.environ.get("GEMINI_API_KEY")
     if not api_key:
-        return [], empty_usage
+        env_paths = [
+            ".env",
+            os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ".env"),
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), ".env")
+        ]
+        for ep in env_paths:
+            if os.path.exists(ep):
+                with open(ep, "r", encoding="utf-8") as f:
+                    for line in f:
+                        if line.startswith("GEMINI_API_KEY="):
+                            api_key = line.split("=", 1)[1].strip().strip('"').strip("'")
+                            break
+            if api_key:
+                break
+    if not api_key:
+        return [], empty_usage, False
     
-    url = f"https://generativelanguage.googleapis.com/v1beta/models/gemini-3-flash-preview:generateContent?key={api_key}"
+    candidate_models = ["gemini-flash-lite-latest", "gemini-3.5-flash-lite", "gemini-flash-latest"]
     system_instruction = (
         "Extract mutual fund transactions from this bank statement or confirmation note. "
         "Return ONLY a valid JSON array of objects with keys: "
@@ -315,49 +336,53 @@ def extract_transactions_with_gemini(text_content, api_key):
         }
     }
     
-    req = urllib.request.Request(
-        url,
-        data=json.dumps(payload).encode("utf-8"),
-        headers={"Content-Type": "application/json"}
-    )
-    
     import time
-    for attempt in range(3):
-        try:
-            with urllib.request.urlopen(req, timeout=35) as response:
-                res_data = json.loads(response.read().decode("utf-8"))
-                usage_meta = res_data.get("usageMetadata", {})
-                token_usage = {
-                    "prompt_tokens": usage_meta.get("promptTokenCount", 0),
-                    "candidates_tokens": usage_meta.get("candidatesTokenCount", 0),
-                    "total_tokens": usage_meta.get("totalTokenCount", 0)
-                }
+    for model_name in candidate_models:
+        url = f"https://generativelanguage.googleapis.com/v1beta/models/{model_name}:generateContent?key={api_key}"
+        req = urllib.request.Request(
+            url,
+            data=json.dumps(payload).encode("utf-8"),
+            headers={"Content-Type": "application/json"}
+        )
+        for attempt in range(2):
+            try:
+                with urllib.request.urlopen(req, timeout=30) as response:
+                    res_data = json.loads(response.read().decode("utf-8"))
+                    usage_meta = res_data.get("usageMetadata", {})
+                    token_usage = {
+                        "prompt_tokens": usage_meta.get("promptTokenCount", 0),
+                        "candidates_tokens": usage_meta.get("candidatesTokenCount", 0),
+                        "total_tokens": usage_meta.get("totalTokenCount", 0)
+                    }
 
-                candidates = res_data.get("candidates", [])
-                if candidates:
-                    text_out = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
-                    text_out = text_out.strip()
-                    if text_out.startswith("```json"):
-                        text_out = text_out[7:]
-                    if text_out.endswith("```"):
-                        text_out = text_out[:-3]
-                    parsed = json.loads(text_out.strip())
-                    if isinstance(parsed, list):
-                        return parsed, token_usage
-                    elif isinstance(parsed, dict) and "transactions" in parsed:
-                        return parsed["transactions"], token_usage
-            break
-        except urllib.error.HTTPError as e:
-            if e.code == 429 and attempt < 2:
-                logger.warning("[!] Gemini 429 rate limit reached. Waiting 5s before retry (attempt %d/3)...", attempt + 1)
-                time.sleep(5)
-                continue
-            logger.error("[!] Gemini extraction error: %s", e)
-            break
-        except Exception as e:
-            logger.error("[!] Gemini extraction error: %s", e)
-            break
-    return [], empty_usage
+                    candidates = res_data.get("candidates", [])
+                    if candidates:
+                        text_out = candidates[0].get("content", {}).get("parts", [{}])[0].get("text", "")
+                        text_out = text_out.strip()
+                        if text_out.startswith("```json"):
+                            text_out = text_out[7:]
+                        if text_out.endswith("```"):
+                            text_out = text_out[:-3]
+                        parsed = json.loads(text_out.strip())
+                        if isinstance(parsed, list):
+                            return parsed, token_usage, True
+                        elif isinstance(parsed, dict) and "transactions" in parsed:
+                            return parsed["transactions"], token_usage, True
+                        return [], token_usage, True
+            except urllib.error.HTTPError as e:
+                if e.code == 429:
+                    logger.warning("[!] Gemini %s 429 rate limit reached. Waiting 3s (attempt %d)...", model_name, attempt + 1)
+                    time.sleep(3)
+                    continue
+                else:
+                    logger.warning("[!] Gemini %s error (%s). Trying next fallback model...", model_name, e)
+                    break
+            except Exception as e:
+                logger.warning("[!] Gemini %s error (%s). Trying next fallback model...", model_name, e)
+                break
+    
+    logger.error("[!] All Gemini models exhausted or failed for this document.")
+    return [], empty_usage, False
 
 KNOWN_FUND_ALIASES = {
     # TISCO Strategic
@@ -543,6 +568,7 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
 
             logger.info("[%s] [%d/%d] Processing email: '%s'...", broker_tag, idx, len(target_ids), subject[:60])
             email_tx_count = 0
+            email_had_error = False
             
             # 1. Kasikorn Funds body table
             if broker_tag == "KBANK":
@@ -630,15 +656,22 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     
                     # Extract transactions: Try Regex Fast-Path first (0 Token)
                     regex_txs, regex_ok = try_regex_parse_confirmation(pdf_text, active_broker)
+                    parse_success = True
                     if regex_ok:
                         logger.info("[%s] [✓] Regex Fast-Path parsed %d transactions from '%s' (0 Tokens used!)", broker_tag, len(regex_txs), filename)
                         gemini_txs = regex_txs
                     else:
                         cleaned_text = clean_pdf_boilerplate(pdf_text)
-                        gemini_txs, usage = extract_transactions_with_gemini(cleaned_text, gemini_api_key)
+                        gemini_txs, usage, parse_success = extract_transactions_with_gemini(cleaned_text, gemini_api_key)
                         total_prompt_tokens += usage.get("prompt_tokens", 0)
                         total_candidates_tokens += usage.get("candidates_tokens", 0)
                         total_tokens += usage.get("total_tokens", 0)
+
+                    if not parse_success:
+                        logger.error("[%s] [✗] Failed to parse '%s' via AI (rate limit or outage). Will NOT cache as processed to allow retry.", broker_tag, filename)
+                        details.append(f"AI parsing failed for {filename} (will retry next sync)")
+                        email_had_error = True
+                        continue
 
                     pdf_tx_count = 0
                     for tx in gemini_txs:
@@ -683,8 +716,8 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                               (pdf_hash, filename, pdf_tx_count))
                     conn.commit()
 
-            # Record email message_id into checkpoint cache
-            if message_id_header:
+            # Record email message_id into checkpoint cache (only if no failures occurred)
+            if message_id_header and not email_had_error:
                 c.execute("INSERT OR IGNORE INTO processed_emails (message_id, broker, subject, email_date, tx_count) VALUES (?, ?, ?, ?, ?)",
                           (message_id_header, broker_tag, subject, email_date_header, email_tx_count))
                 conn.commit()
