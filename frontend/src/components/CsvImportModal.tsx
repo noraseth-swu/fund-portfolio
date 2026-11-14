@@ -578,7 +578,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
         {rows.length === 0 && activeTab === 'pdf' && !isPasswordRequired && (
           <div
             onClick={() => pdfInputRef.current?.click()}
-            className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition bg-slate-950/40 hover:bg-slate-950/70 text-center"
+            className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition bg-slate-50/80 hover:bg-slate-100/80 dark:border-slate-700 dark:bg-slate-950/40 dark:hover:bg-slate-950/70 text-center"
           >
             <input
               type="file"
@@ -587,12 +587,12 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
               accept=".pdf"
               className="hidden"
             />
-            <div className="w-14 h-14 rounded-2xl bg-gradient-to-tr from-indigo-950 to-purple-950 border border-indigo-700/50 flex items-center justify-center text-indigo-400 mb-3 shadow-lg shadow-indigo-600/20">
+            <div className="w-14 h-14 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 dark:bg-gradient-to-tr dark:from-indigo-950 dark:to-purple-950 dark:border-indigo-700/50 dark:text-indigo-400 flex items-center justify-center mb-3 shadow-md">
               <FileText className="w-7 h-7" />
             </div>
-            <p className="text-base font-bold text-white mb-1">{t('dragPdfHint')}</p>
-            <p className="text-xs text-slate-400 max-w-lg mb-3">{t('dragPdfSupport')}</p>
-            <div className="flex items-center gap-2 text-[11px] text-indigo-400 bg-indigo-950/50 px-3 py-1 rounded-full border border-indigo-800/40">
+            <p className="text-base font-bold text-slate-800 dark:text-white mb-1">{t('dragPdfHint')}</p>
+            <p className="text-xs text-slate-600 dark:text-slate-400 max-w-lg mb-3">{t('dragPdfSupport')}</p>
+            <div className="flex items-center gap-2 text-[11px] text-indigo-700 bg-indigo-50 border border-indigo-200 dark:text-indigo-400 dark:bg-indigo-950/50 dark:border-indigo-800/40 px-3 py-1 rounded-full">
               <Sparkles className="w-3.5 h-3.5" />
               <span>{t('dragPdfFeature')}</span>
             </div>
@@ -607,15 +607,15 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
               value={pastedText}
               onChange={(e) => setPastedText(e.target.value)}
               placeholder={t('pastePlaceholder')}
-              className="w-full flex-1 min-h-[220px] bg-slate-950 border border-slate-700 rounded-xl p-4 text-xs font-mono text-slate-200 placeholder-slate-600 focus:outline-none focus:border-indigo-500"
+              className="w-full flex-1 min-h-[220px] bg-slate-50 dark:bg-slate-950 border border-slate-300 dark:border-slate-700 rounded-xl p-4 text-xs font-mono text-slate-800 dark:text-slate-200 placeholder-slate-400 dark:placeholder-slate-600 focus:outline-none focus:border-indigo-500"
             />
             <button
               onClick={handleDirectTextSubmit}
               disabled={loading || !pastedText.trim()}
-              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition self-end flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer"
+              className="bg-indigo-600 hover:bg-indigo-500 disabled:opacity-50 text-white font-semibold px-4 py-2.5 rounded-xl text-sm transition self-end flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer btn-primary-indigo"
             >
-              <Sparkles className="w-4 h-4" />
-              <span>{t('btnAnalyzeAi')}</span>
+              <Sparkles className="w-4 h-4 text-white" />
+              <span className="text-white">{t('btnAnalyzeAi')}</span>
             </button>
           </div>
         )}
@@ -626,7 +626,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
             <div className="flex justify-end">
               <button
                 onClick={downloadSampleTemplate}
-                className="flex items-center gap-1.5 text-xs text-indigo-400 hover:text-indigo-300 font-semibold px-3 py-1.5 rounded-lg border border-indigo-500/30 hover:bg-indigo-950/40 transition cursor-pointer"
+                className="btn-header-secondary flex items-center gap-1.5 text-xs font-semibold px-3 py-1.5 rounded-lg border transition cursor-pointer"
               >
                 <Download className="w-3.5 h-3.5" />
                 <span>{t('downloadSampleCsv')}</span>
@@ -635,7 +635,7 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
 
             <div
               onClick={() => csvInputRef.current?.click()}
-              className="border-2 border-dashed border-slate-700 hover:border-indigo-500 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition bg-slate-950/40 hover:bg-slate-950/70 text-center"
+              className="border-2 border-dashed border-slate-300 hover:border-indigo-500 rounded-2xl p-10 flex flex-col items-center justify-center cursor-pointer transition bg-slate-50/80 hover:bg-slate-100/80 dark:border-slate-700 dark:bg-slate-950/40 dark:hover:bg-slate-950/70 text-center"
             >
               <input
                 type="file"
@@ -644,11 +644,11 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
                 accept=".csv,.txt"
                 className="hidden"
               />
-              <div className="w-12 h-12 rounded-2xl bg-indigo-950/80 border border-indigo-700/50 flex items-center justify-center text-indigo-400 mb-3 shadow-lg shadow-indigo-600/20">
+              <div className="w-12 h-12 rounded-2xl bg-indigo-50 border border-indigo-200 text-indigo-600 dark:bg-indigo-950/80 dark:border-indigo-700/50 dark:text-indigo-400 flex items-center justify-center mb-3 shadow-md">
                 <UploadCloud className="w-6 h-6" />
               </div>
-              <p className="text-sm font-semibold text-white mb-1">{t('dragCsvHint')}</p>
-              <p className="text-xs text-slate-400">{t('dragCsvSupport')}</p>
+              <p className="text-sm font-semibold text-slate-800 dark:text-white mb-1">{t('dragCsvHint')}</p>
+              <p className="text-xs text-slate-600 dark:text-slate-400">{t('dragCsvSupport')}</p>
             </div>
           </div>
         )}
