@@ -534,7 +534,6 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
         ("DIME", "no-reply@dime.co.th"),
         ("SCB", "Registrar2@email.scb.co.th"),
         ("KBANK", "ka.CyberInvest@kasikornasset.com"),
-        ("KBANK_PVD", "KA.Pvdcallcenter@kasikornasset.com")
     ]
     
     total_emails_scanned = 0
@@ -574,12 +573,43 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             msg = email.message_from_bytes(raw_email)
             subject = decode_mime_words(msg.get("Subject", ""))
             subj_lower = subject.lower()
-            if "credit card" in subj_lower or "บัตรเครดิต" in subj_lower:
-                logger.debug("[%s] Skipping non-investment email: '%s'", broker_tag, subject[:60])
-                continue
 
             message_id_header = (msg.get("Message-ID") or "").strip()
             email_date_header = (msg.get("Date") or "").strip()
+
+            # STRICT TRANSACTION FILTER:
+            # We ONLY process genuine transaction confirmation notes!
+            # Reject monthly balance summaries, statements of holding, order reminders, opening letters.
+            skip_subject_keywords = [
+                "statement of holding",
+                "monthly statement",
+                "ใบสรุปข้อมูลบัญชี",
+                "สรุปข้อมูลการลงทุน",
+                "reminding of waiting order",
+                "เปิดบัญชีกองทุน",
+                "ใบแจ้งยอดเงิน",
+                "ใบรับรอง",
+                "credit card",
+                "บัตรเครดิต"
+            ]
+            if any(k in subj_lower for k in skip_subject_keywords):
+                logger.debug("[%s] Skipping non-transaction email (holding statement/admin): '%s'", broker_tag, subject[:60])
+                if message_id_header:
+                    c.execute("INSERT OR IGNORE INTO processed_emails (message_id, broker, subject, email_date, tx_count) VALUES (?, ?, ?, ?, 0)",
+                              (message_id_header, broker_tag, subject, email_date_header))
+                    conn.commit()
+                continue
+
+            # For KBANK: Must be confirmation of executed transaction
+            if broker_tag == "KBANK":
+                if "confirming investment unit transactions" not in subj_lower and "ยืนยันการทำรายการหน่วยลงทุน" not in subj_lower:
+                    logger.debug("[KBANK] Skipping non-confirmation KBANK email: '%s'", subject[:60])
+                    if message_id_header:
+                        c.execute("INSERT OR IGNORE INTO processed_emails (message_id, broker, subject, email_date, tx_count) VALUES (?, ?, ?, ?, 0)",
+                                  (message_id_header, broker_tag, subject, email_date_header))
+                        conn.commit()
+                    continue
+
             if message_id_header:
                 c.execute("SELECT tx_count FROM processed_emails WHERE message_id = ?", (message_id_header,))
                 if c.fetchone():
@@ -647,8 +677,30 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                     filename = decode_mime_words(filename)
                 
                 fn_lower = filename.lower() if filename else ""
-                if any(skip_kw in fn_lower for skip_kw in ["open_account", "suittest", "fatca", "terms", "condition", "consent"]):
-                    logger.info("[%s] Skipping non-transaction administrative PDF: '%s'", broker_tag, filename)
+                skip_pdf_keywords = [
+                    "statement of holding",
+                    "statement_of_holding",
+                    "monthly_statement",
+                    "monthly statement",
+                    "stm20",
+                    "stm_",
+                    "open_account",
+                    "suittest",
+                    "fatca",
+                    "terms",
+                    "condition",
+                    "consent"
+                ]
+                if any(skip_kw in fn_lower for skip_kw in skip_pdf_keywords):
+                    logger.debug("[%s] Skipping monthly holding / administrative PDF: '%s'", broker_tag, filename)
+                    continue
+
+                if broker_tag == "TTB" and "confirmation note" not in fn_lower:
+                    logger.debug("[%s] Skipping non-confirmation-note TTB PDF: '%s'", broker_tag, filename)
+                    continue
+
+                if broker_tag == "DIME" and "confirmationnote" not in fn_lower and "confirmation note" not in fn_lower:
+                    logger.debug("[%s] Skipping non-confirmation-note Dime PDF: '%s'", broker_tag, filename)
                     continue
                 
                 if (filename and filename.lower().endswith(".pdf")) or "attachment" in content_disposition.lower():
