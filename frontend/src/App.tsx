@@ -87,7 +87,7 @@ export const App: React.FC = () => {
   const [historyFundFilter, setHistoryFundFilter] = useState<string | null>(null);
 
   // Asset Filter & Search & Sorting for Holdings
-  const [selectedAssetType, setSelectedAssetType] = useState<'ALL' | 'FUND' | 'STOCK'>('ALL');
+  const [selectedAssetType, setSelectedAssetType] = useState<'ALL' | 'FUND' | 'STOCK' | 'PVD'>('ALL');
   const [holdingsSearch, setHoldingsSearch] = useState('');
   const [holdingsSortField, setHoldingsSortField] = useState<'fund_abbr' | 'platform' | 'total_units' | 'avg_cost' | 'current_nav' | 'market_value' | 'unrealized_pl'>('market_value');
   const [holdingsSortOrder, setHoldingsSortOrder] = useState<'asc' | 'desc'>('desc');
@@ -180,10 +180,13 @@ export const App: React.FC = () => {
         return false;
       }
       // Asset class filter
-      if (selectedAssetType === 'FUND' && h.asset_type === 'STOCK') {
+      if (selectedAssetType === 'FUND' && h.asset_type !== 'FUND') {
         return false;
       }
       if (selectedAssetType === 'STOCK' && h.asset_type !== 'STOCK') {
+        return false;
+      }
+      if (selectedAssetType === 'PVD' && h.asset_type !== 'PVD') {
         return false;
       }
       // Search filter
@@ -337,18 +340,18 @@ export const App: React.FC = () => {
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Header Navigation */}
       <header className="border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 transition-colors">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-3 sm:gap-4">
           {/* Left: Brand Logo, Title & Main Nav Tabs */}
-          <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+          <div className="flex items-center gap-3 sm:gap-6 min-w-0 shrink-0">
             <div className="flex items-center gap-2.5 shrink-0">
-              <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-xs select-none">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-xs select-none shrink-0">
                 <span className="font-mono text-xs font-black tracking-tight text-white">FP</span>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-2 shrink-0">
                 <span className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
                   {t('appTitle')}
                 </span>
-                <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-mono font-medium">
+                <span className="hidden sm:inline-flex items-center text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-mono font-medium whitespace-nowrap">
                   SEC v2
                 </span>
               </div>
@@ -361,7 +364,7 @@ export const App: React.FC = () => {
                   setActiveView('DASHBOARD');
                   setHistoryFundFilter(null);
                 }}
-                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                   activeView === 'DASHBOARD'
                     ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-white shadow-xs font-semibold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -372,7 +375,7 @@ export const App: React.FC = () => {
               </button>
               <button
                 onClick={() => setActiveView('HISTORY')}
-                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 whitespace-nowrap ${
                   activeView === 'HISTORY'
                     ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-white shadow-xs font-semibold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
@@ -386,75 +389,78 @@ export const App: React.FC = () => {
 
           {/* Right: Actions & Tools */}
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            {/* Action 1: Refresh Dashboard Data */}
-            <button
-              onClick={handleManualRefresh}
-              disabled={isRefreshing || loading}
-              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer disabled:opacity-50"
-              title={t('refresh')}
-              aria-label={t('refresh')}
-            >
-              <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
-            </button>
+            {/* Cluster 1: Data Quick Actions */}
+            <div className="flex items-center gap-0.5 bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs">
+              {/* Refresh Dashboard Data */}
+              <button
+                onClick={handleManualRefresh}
+                disabled={isRefreshing || loading}
+                className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                title={t('refresh')}
+                aria-label={t('refresh')}
+              >
+                <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
+              </button>
 
-            {/* Action 2: Sync SEC NAV */}
-            <button
-              onClick={handleSyncNav}
-              disabled={syncing}
-              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer disabled:opacity-50"
-              title={t('syncNav')}
-              aria-label={t('syncNav')}
-            >
-              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
-            </button>
+              {/* Sync SEC NAV */}
+              <button
+                onClick={handleSyncNav}
+                disabled={syncing}
+                className="p-1.5 rounded-lg text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800 transition cursor-pointer disabled:opacity-50"
+                title={t('syncNav')}
+                aria-label={t('syncNav')}
+              >
+                <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
+              </button>
 
-            {/* Action 3: Privacy Mode Toggle */}
-            <button
-              onClick={togglePrivacyMode}
-              className={`p-2 rounded-xl transition cursor-pointer border ${
-                isPrivacyMode
-                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
-                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
-              }`}
-              title={isPrivacyMode ? t('privacyModeOn') : t('privacyModeOff')}
-              aria-label={t('privacyModeToggle')}
-            >
-              {isPrivacyMode ? <EyeOff className="w-4 h-4 text-amber-500" /> : <Eye className="w-4 h-4" />}
-            </button>
+              {/* Privacy Mode Toggle */}
+              <button
+                onClick={togglePrivacyMode}
+                className={`p-1.5 rounded-lg transition cursor-pointer ${
+                  isPrivacyMode
+                    ? 'bg-amber-500/10 text-amber-600 dark:text-amber-400 font-semibold'
+                    : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white hover:bg-white dark:hover:bg-slate-800'
+                }`}
+                title={isPrivacyMode ? t('privacyModeOn') : t('privacyModeOff')}
+                aria-label={t('privacyModeToggle')}
+              >
+                {isPrivacyMode ? <EyeOff className="w-3.5 h-3.5 text-amber-500" /> : <Eye className="w-3.5 h-3.5" />}
+              </button>
+            </div>
 
-            {/* Action 4: Import Statement (PDF / CSV) */}
+            {/* Import Statement (PDF / CSV) */}
             <button
               onClick={() => setIsCsvModalOpen(true)}
               className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
               title={t('importerSubtitle')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
-              <span className="hidden sm:inline">{t('importData')}</span>
+              <span className="hidden lg:inline">{t('importData')}</span>
             </button>
 
-            {/* Action 5: Settings Modal */}
-            <button
-              onClick={() => setIsSettingsModalOpen(true)}
-              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer"
-              title={t('settings')}
-              aria-label={t('settings')}
-            >
-              <Sliders className="w-4 h-4 text-slate-600 dark:text-slate-400" />
-            </button>
-
-            {/* Action 6: Primary CTA "+ Record Transaction" */}
+            {/* Primary CTA "+ Record Transaction" */}
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="px-3 py-1.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer ml-1"
+              className="px-3 py-1.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer"
             >
-              <Plus className="w-4 h-4 text-white" />
+              <Plus className="w-3.5 h-3.5 text-white" />
               <span className="hidden md:inline text-white">{t('addTransaction')}</span>
             </button>
 
-            {/* System Utilities Divider */}
-            <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block" />
+            {/* Divider */}
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 mx-0.5 sm:mx-1 hidden sm:block" />
 
-            {/* Theme Toggle Button (Cycles Light / Dark) */}
+            {/* Settings Modal */}
+            <button
+              onClick={() => setIsSettingsModalOpen(true)}
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer"
+              title={t('settings')}
+              aria-label={t('settings')}
+            >
+              <Sliders className="w-4 h-4" />
+            </button>
+
+            {/* Theme Toggle Button */}
             <button
               onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
               className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer"
@@ -668,6 +674,16 @@ export const App: React.FC = () => {
                     >
                       {t('stocks')}
                     </button>
+                    <button
+                      onClick={() => setSelectedAssetType('PVD')}
+                      className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer ${
+                        selectedAssetType === 'PVD'
+                          ? 'bg-indigo-600 text-white shadow-xs'
+                          : 'text-slate-600 hover:text-slate-900 dark:text-slate-400 dark:hover:text-slate-200'
+                      }`}
+                    >
+                      {t('assetPvd')}
+                    </button>
                   </div>
 
                   {/* Platform Filter */}
@@ -830,6 +846,11 @@ export const App: React.FC = () => {
                                     {locale === 'th' ? 'หุ้น' : 'Stock'}
                                   </span>
                                 )}
+                                {h.asset_type === 'PVD' && (
+                                  <span className="px-1.5 py-0.5 rounded text-[9px] font-bold bg-emerald-100 dark:bg-emerald-950/80 text-emerald-800 dark:text-emerald-400 border border-emerald-300 dark:border-emerald-800">
+                                    PVD
+                                  </span>
+                                )}
                               </div>
                               <span className="text-[11px] text-slate-500 dark:text-slate-400 block truncate max-w-xs" title={h.fund_name_th || h.proj_id}>
                                 {h.fund_name_th || h.proj_id}
@@ -871,16 +892,22 @@ export const App: React.FC = () => {
                               </span>
                             </td>
                             <td className="py-3.5 px-4 text-center">
-                              <button
-                                onClick={() => {
-                                  setHistoryFundFilter(h.fund_abbr);
-                                  setActiveView('HISTORY');
-                                }}
-                                className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition cursor-pointer"
-                                title={t('viewHistory')}
-                              >
-                                <History className="w-4 h-4" />
-                              </button>
+                              {h.asset_type === 'PVD' ? (
+                                <span className="text-[10px] text-slate-400 dark:text-slate-500 font-medium select-none" title="PVD position tracks latest certificate snapshot">
+                                  Snapshot
+                                </span>
+                              ) : (
+                                <button
+                                  onClick={() => {
+                                    setHistoryFundFilter(h.fund_abbr);
+                                    setActiveView('HISTORY');
+                                  }}
+                                  className="p-1.5 rounded-lg text-slate-400 hover:text-indigo-600 dark:hover:text-indigo-400 hover:bg-indigo-50 dark:hover:bg-slate-800 transition cursor-pointer"
+                                  title={t('viewHistory')}
+                                >
+                                  <History className="w-4 h-4" />
+                                </button>
+                              )}
                             </td>
                           </tr>
                         );

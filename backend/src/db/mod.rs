@@ -254,6 +254,24 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             tx_count INTEGER DEFAULT 0,
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 8. ตารางบันทึกสถานะการถือครองกองทุนสำรองเลี้ยงชีพ (PVD Latest Position Snapshot)
+        CREATE TABLE IF NOT EXISTS pvd_positions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT 'default_user',
+            policy_code TEXT NOT NULL,
+            policy_name TEXT NOT NULL,
+            as_of_date TEXT NOT NULL,
+            units TEXT NOT NULL,
+            nav TEXT NOT NULL,
+            cost TEXT NOT NULL,
+            market_value TEXT NOT NULL,
+            unrealized_pl TEXT NOT NULL,
+            unrealized_pl_pct TEXT NOT NULL,
+            statement_file TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, policy_code)
+        );
         "#,
     )
     .execute(pool)

@@ -195,3 +195,20 @@ pub struct UserSettings {
     pub auto_sync_enabled: bool,
     pub last_sync_at: Option<String>,
 }
+
+/// ข้อมูลสถานะการถือครองกองทุนสำรองเลี้ยงชีพ (PVD Latest Position Snapshot)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PvdPosition {
+    pub id: String,
+    pub user_id: String,
+    pub policy_code: String,
+    pub policy_name: String,
+    pub as_of_date: String,
+    pub units: Decimal,
+    pub nav: Decimal,
+    pub cost: Decimal,
+    pub market_value: Decimal,
+    pub unrealized_pl: Decimal,
+    pub unrealized_pl_pct: Decimal,
+    pub statement_file: Option<String>,
+}

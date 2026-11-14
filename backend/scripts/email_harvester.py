@@ -221,6 +221,62 @@ def parse_html_table_kasikorn(html_body):
                     })
     return txs
 
+def parse_kbank_pvd_statement(pdf_text):
+    """
+    Parses Kasikorn Provident Fund (PVD) Member Statement into policy positions.
+    Returns: (as_of_date_str, holdings_list)
+    """
+    as_of_match = re.search(r'(?:As of date|สิ้นสุด ณ\. วันที่)\s*(\d{2})[/-](\d{2})[/-](\d{4})', pdf_text)
+    if as_of_match:
+        day, month, year = as_of_match.groups()
+        y_int = int(year)
+        if y_int > 2400:
+            y_int -= 543
+        as_of_date = f"{y_int:04d}-{int(month):02d}-{int(day):02d}"
+    else:
+        as_of_date = ""
+
+    names = {}
+    for p_code, p_name in re.findall(r'(PF[A-Z0-9]+)\s*:\s*-\s*([^\n/]+)', pdf_text):
+        names[p_code] = p_name.strip()
+
+    holdings = []
+    pattern = r'(PF[A-Z0-9]+)\s+KA\s+([\d,.]+)\s+([\d.]+)\s+([\d,.]+)'
+    for code, units_s, nav_s, mval_s in re.findall(pattern, pdf_text):
+        u = safe_float(units_s)
+        nav = safe_float(nav_s)
+        mval = safe_float(mval_s)
+        if mval <= 0:
+            continue
+        
+        idx = pdf_text.find(code)
+        cost = mval
+        unrealized = 0.0
+        if idx != -1:
+            snippet = pdf_text[idx:idx+800]
+            amt_match = re.search(r'(?:รวมจำานวนเงิน|รวมจำนวนเงิน)\s*/\s*Total amount\s+([\d,.]+)\s+([-\d,.]+)\s+([\d,.]+)\s+([-\d,.]+)\s+([\d,.]+)', snippet)
+            if amt_match:
+                mem_c = safe_float(amt_match.group(1))
+                mem_b = safe_float(amt_match.group(2))
+                empr_c = safe_float(amt_match.group(3))
+                empr_b = safe_float(amt_match.group(4))
+                cost = mem_c + empr_c
+                unrealized = mem_b + empr_b
+        
+        pl_pct = (unrealized / cost * 100.0) if cost > 0 else 0.0
+        holdings.append({
+            "code": code,
+            "name": names.get(code, f"K-PVD {code}"),
+            "as_of_date": as_of_date,
+            "units": u,
+            "nav": nav,
+            "cost": round(cost, 2),
+            "market_value": round(mval, 2),
+            "unrealized_pl": round(unrealized, 2),
+            "unrealized_pl_pct": round(pl_pct, 2)
+        })
+    return as_of_date, holdings
+
 def clean_pdf_boilerplate(text):
     """
     Strips repetitive legal footers, warning boxes, and branch directories
@@ -521,6 +577,24 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
     """)
+    c.execute("""
+        CREATE TABLE IF NOT EXISTS pvd_positions (
+            id TEXT PRIMARY KEY,
+            user_id TEXT NOT NULL DEFAULT 'default_user',
+            policy_code TEXT NOT NULL,
+            policy_name TEXT NOT NULL,
+            as_of_date TEXT NOT NULL,
+            units TEXT NOT NULL,
+            nav TEXT NOT NULL,
+            cost TEXT NOT NULL,
+            market_value TEXT NOT NULL,
+            unrealized_pl TEXT NOT NULL,
+            unrealized_pl_pct TEXT NOT NULL,
+            statement_file TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            UNIQUE(user_id, policy_code)
+        );
+    """)
     conn.commit()
     
     import pypdf
@@ -534,6 +608,7 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
         ("DIME", "no-reply@dime.co.th"),
         ("SCB", "Registrar2@email.scb.co.th"),
         ("KBANK", "ka.CyberInvest@kasikornasset.com"),
+        ("KBANK_PVD", "KA.Pvdcallcenter@kasikornasset.com"),
     ]
     
     total_emails_scanned = 0
@@ -556,6 +631,76 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
             continue
         
         msg_ids = data[0].split()
+
+        # Dedicated Handler for KBANK_PVD (Approach 1: Latest Position Snapshot)
+        if broker_tag == "KBANK_PVD":
+            logger.info("[KBANK_PVD] Processing Provident Fund (PVD) Member Statements via Latest Position Snapshot...")
+            latest_pvd_date = ""
+            latest_pvd_holdings = []
+            latest_filename = ""
+            
+            candidate_pwds = passwords.get("KBANK", []) + passwords.get("GENERAL", [])
+            for idx, msg_id in enumerate(msg_ids, 1):
+                total_emails_scanned += 1
+                res, msg_data = mail.fetch(msg_id, '(RFC822)')
+                if res != "OK":
+                    continue
+                msg = email.message_from_bytes(msg_data[0][1])
+                for part in msg.walk():
+                    fn = part.get_filename()
+                    if fn:
+                        fn = decode_mime_words(fn)
+                    if fn and fn.lower().endswith(".pdf"):
+                        pdf_data = part.get_payload(decode=True)
+                        if not pdf_data:
+                            continue
+                        reader, _ = decrypt_pdf_bytes(pdf_data, candidate_pwds)
+                        if reader:
+                            txt = "\n".join(p.extract_text() or "" for p in reader.pages)
+                            pvd_date, h_list = parse_kbank_pvd_statement(txt)
+                            if pvd_date and pvd_date >= latest_pvd_date and h_list:
+                                latest_pvd_date = pvd_date
+                                latest_pvd_holdings = h_list
+                                latest_filename = fn
+            
+            if latest_pvd_holdings:
+                active_codes = []
+                pvd_total_val = 0.0
+                for h in latest_pvd_holdings:
+                    active_codes.append(h["code"])
+                    pvd_total_val += h["market_value"]
+                    pvd_id = f"pvd_{user_id}_{h['code']}"
+                    c.execute("""
+                        INSERT INTO pvd_positions (
+                            id, user_id, policy_code, policy_name, as_of_date,
+                            units, nav, cost, market_value, unrealized_pl, unrealized_pl_pct, statement_file, updated_at
+                        )
+                        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                        ON CONFLICT(user_id, policy_code) DO UPDATE SET
+                            policy_name = excluded.policy_name,
+                            as_of_date = excluded.as_of_date,
+                            units = excluded.units,
+                            nav = excluded.nav,
+                            cost = excluded.cost,
+                            market_value = excluded.market_value,
+                            unrealized_pl = excluded.unrealized_pl,
+                            unrealized_pl_pct = excluded.unrealized_pl_pct,
+                            statement_file = excluded.statement_file,
+                            updated_at = CURRENT_TIMESTAMP
+                    """, (
+                        pvd_id, user_id, h["code"], h["name"], h["as_of_date"],
+                        f"{h['units']:.4f}", f"{h['nav']:.4f}", f"{h['cost']:.2f}",
+                        f"{h['market_value']:.2f}", f"{h['unrealized_pl']:.2f}",
+                        f"{h['unrealized_pl_pct']:.2f}", latest_filename
+                    ))
+                placeholders = ",".join("?" for _ in active_codes)
+                c.execute(f"DELETE FROM pvd_positions WHERE user_id = ? AND policy_code NOT IN ({placeholders})", [user_id] + active_codes)
+                conn.commit()
+                logger.info("[KBANK_PVD] [✓] Synced latest PVD positions (As of %s): %d policies, Total Value: %.2f THB (from %s)", latest_pvd_date, len(latest_pvd_holdings), pvd_total_val, latest_filename)
+                details.append(f"Synced PVD Snapshot as of {latest_pvd_date} ({pvd_total_val:,.2f} THB) from {latest_filename}")
+            else:
+                logger.info("[KBANK_PVD] No active PVD policies extracted.")
+            continue
         if max_emails > 0:
             logger.info("Found %d emails for %s. Processing up to %d latest...", len(msg_ids), broker_tag, max_emails)
             target_ids = msg_ids[-max_emails:]

@@ -1,7 +1,10 @@
 use super::AppState;
 use super::auth::AuthUser;
 use crate::db::repository::Repository;
-use crate::domain::{CalculationEngine, Platform, Transaction, TransactionType, UserSettings};
+use crate::domain::{
+    CalculationEngine, HoldingPosition, Platform, PlatformSummary, Transaction, TransactionType,
+    UserSettings,
+};
 use crate::sync::SyncService;
 use axum::{
     Json,
@@ -56,7 +59,7 @@ pub async fn get_brokers(
 }
 
 /// GET /api/portfolio
-/// คำนวณสรุปพอร์ตการลงทุนเฉพาะของ user_id ที่ส่งมากับ Token
+/// คำนวณสรุปพอร์ตการลงทุนเฉพาะของ user_id ที่ส่งมากับ Token (รวมทั้งกองทุนรวม หุ้น และ PVD Snapshot)
 pub async fn get_portfolio(
     auth: AuthUser,
     State(state): State<Arc<AppState>>,
@@ -69,7 +72,71 @@ pub async fn get_portfolio(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let summary = CalculationEngine::calculate_portfolio(txs, &nav_map);
+    let mut summary = CalculationEngine::calculate_portfolio(txs, &nav_map);
+
+    // รวมข้อมูลกองทุนสำรองเลี้ยงชีพ (PVD Latest Position Snapshot)
+    if let Ok(pvd_positions) = Repository::get_pvd_positions(&state.pool, &auth.user_id).await {
+        for pvd in pvd_positions {
+            summary.total_cost += pvd.cost;
+            summary.market_value += pvd.market_value;
+            summary.total_unrealized_pl += pvd.unrealized_pl;
+
+            let entry = summary
+                .platforms
+                .entry("KBANK_PVD".to_string())
+                .or_insert(PlatformSummary {
+                    platform: "KBANK_PVD".to_string(),
+                    total_cost: Decimal::ZERO,
+                    market_value: Decimal::ZERO,
+                    unrealized_pl: Decimal::ZERO,
+                    unrealized_pl_pct: Decimal::ZERO,
+                    realized_pl: Decimal::ZERO,
+                    allocation_pct: Decimal::ZERO,
+                });
+            entry.total_cost += pvd.cost;
+            entry.market_value += pvd.market_value;
+            entry.unrealized_pl += pvd.unrealized_pl;
+
+            summary.holdings.push(HoldingPosition {
+                proj_id: pvd.policy_code.clone(),
+                fund_abbr: pvd.policy_code,
+                fund_name_th: Some(pvd.policy_name),
+                platform: "KBANK_PVD".to_string(),
+                total_units: pvd.units,
+                avg_cost: if pvd.units > Decimal::ZERO {
+                    (pvd.cost / pvd.units).round_dp(4)
+                } else {
+                    Decimal::ZERO
+                },
+                total_cost: pvd.cost,
+                current_nav: pvd.nav,
+                nav_date: Some(pvd.as_of_date),
+                asset_type: "PVD".to_string(),
+                market_value: pvd.market_value,
+                unrealized_pl: pvd.unrealized_pl,
+                unrealized_pl_pct: pvd.unrealized_pl_pct,
+                realized_pl: Decimal::ZERO,
+                total_dividend: Decimal::ZERO,
+            });
+        }
+
+        // คำนวณสัดส่วน % ภาพรวมใหม่
+        if summary.total_cost > Decimal::ZERO {
+            summary.total_unrealized_pl_pct = ((summary.total_unrealized_pl / summary.total_cost)
+                * Decimal::from(100))
+            .round_dp(2);
+        }
+        if summary.market_value > Decimal::ZERO {
+            for plat in summary.platforms.values_mut() {
+                plat.allocation_pct =
+                    ((plat.market_value / summary.market_value) * Decimal::from(100)).round_dp(2);
+                if plat.total_cost > Decimal::ZERO {
+                    plat.unrealized_pl_pct =
+                        ((plat.unrealized_pl / plat.total_cost) * Decimal::from(100)).round_dp(2);
+                }
+            }
+        }
+    }
 
     Ok(Json(summary))
 }

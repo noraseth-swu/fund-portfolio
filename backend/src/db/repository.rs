@@ -1,6 +1,6 @@
 #![allow(dead_code)]
 use super::DbPool;
-use crate::domain::{NavMap, Platform, Transaction, TransactionType, UserSettings};
+use crate::domain::{NavMap, Platform, PvdPosition, Transaction, TransactionType, UserSettings};
 use crate::sec::models::{DailyNavInfo, FundProfile};
 use rust_decimal::Decimal;
 use sqlx::Row;
@@ -566,6 +566,54 @@ impl Repository {
         .await?;
 
         Ok(())
+    }
+
+    /// ดึงรายการสถานะการถือครองกองทุนสำรองเลี้ยงชีพ (PVD Latest Positions) สำหรับ user_id
+    pub async fn get_pvd_positions(
+        pool: &DbPool,
+        user_id: &str,
+    ) -> Result<Vec<PvdPosition>, Box<dyn std::error::Error + Send + Sync>> {
+        let rows = sqlx::query(
+            r#"
+            SELECT id, user_id, policy_code, policy_name, as_of_date,
+                   units, nav, cost, market_value, unrealized_pl, unrealized_pl_pct, statement_file
+            FROM pvd_positions
+            WHERE user_id = ?1
+            ORDER BY policy_code ASC
+            "#,
+        )
+        .bind(user_id)
+        .fetch_all(pool)
+        .await?;
+
+        let positions = rows
+            .into_iter()
+            .map(|r| {
+                let units_str: String = r.get("units");
+                let nav_str: String = r.get("nav");
+                let cost_str: String = r.get("cost");
+                let mval_str: String = r.get("market_value");
+                let upl_str: String = r.get("unrealized_pl");
+                let upl_pct_str: String = r.get("unrealized_pl_pct");
+
+                PvdPosition {
+                    id: r.get("id"),
+                    user_id: r.get("user_id"),
+                    policy_code: r.get("policy_code"),
+                    policy_name: r.get("policy_name"),
+                    as_of_date: r.get("as_of_date"),
+                    units: Decimal::from_str(&units_str).unwrap_or(Decimal::ZERO),
+                    nav: Decimal::from_str(&nav_str).unwrap_or(Decimal::ZERO),
+                    cost: Decimal::from_str(&cost_str).unwrap_or(Decimal::ZERO),
+                    market_value: Decimal::from_str(&mval_str).unwrap_or(Decimal::ZERO),
+                    unrealized_pl: Decimal::from_str(&upl_str).unwrap_or(Decimal::ZERO),
+                    unrealized_pl_pct: Decimal::from_str(&upl_pct_str).unwrap_or(Decimal::ZERO),
+                    statement_file: r.get("statement_file"),
+                }
+            })
+            .collect();
+
+        Ok(positions)
     }
 }
 

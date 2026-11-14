@@ -8,7 +8,7 @@ export interface HoldingPosition {
   total_cost: string;
   current_nav: string;
   nav_date?: string;
-  asset_type?: 'FUND' | 'STOCK';
+  asset_type?: 'FUND' | 'STOCK' | 'PVD';
   market_value: string;
   unrealized_pl: string;
   unrealized_pl_pct: string;

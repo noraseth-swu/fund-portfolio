@@ -15,6 +15,14 @@ export const PlatformBadge: React.FC<Props> = ({ platform }) => {
           KBank
         </span>
       );
+    case 'KBANK_PVD':
+    case 'PVD':
+      return (
+        <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-emerald-50 text-emerald-800 border border-emerald-300 dark:bg-emerald-950/80 dark:text-emerald-300 dark:border-emerald-600/50">
+          <span className="w-1.5 h-1.5 rounded-full bg-emerald-400 mr-1.5" />
+          KBank (PVD)
+        </span>
+      );
     case 'TTB':
       return (
         <span className="inline-flex items-center px-2.5 py-0.5 rounded-full text-xs font-semibold bg-blue-50 text-blue-700 border border-blue-200 dark:bg-blue-950 dark:text-blue-400 dark:border-blue-700/50">
