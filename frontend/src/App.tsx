@@ -19,7 +19,6 @@ import {
   FileSpreadsheet,
   Sun,
   Moon,
-  Laptop,
   Globe,
   Eye,
   EyeOff,
@@ -337,108 +336,34 @@ export const App: React.FC = () => {
   return (
     <div className="min-h-screen bg-slate-950 text-slate-100 flex flex-col font-sans">
       {/* Header Navigation */}
-      <header className="border-b border-slate-800/80 bg-slate-900/60 backdrop-blur-md sticky top-0 z-40">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-600 flex items-center justify-center shadow-sm logo-container select-none">
-              <span className="font-mono text-sm font-extrabold tracking-tight text-white">FP</span>
-            </div>
-            <div>
-              <h1 className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white flex items-center gap-2">
-                {t('appTitle')}
-                <span className="text-[10px] px-2 py-0.5 rounded-full bg-slate-100 text-slate-600 border border-slate-200 dark:bg-slate-800 dark:text-slate-400 dark:border-slate-700 font-mono font-medium">
-                  SEC API v2
+      <header className="border-b border-slate-200 dark:border-slate-800/80 bg-white/80 dark:bg-slate-900/80 backdrop-blur-md sticky top-0 z-40 transition-colors">
+        <div className="max-w-7xl mx-auto px-4 sm:px-6 lg:px-8 h-16 flex items-center justify-between gap-4">
+          {/* Left: Brand Logo, Title & Main Nav Tabs */}
+          <div className="flex items-center gap-3 sm:gap-6 min-w-0">
+            <div className="flex items-center gap-2.5 shrink-0">
+              <div className="w-9 h-9 rounded-xl bg-indigo-600 flex items-center justify-center shadow-xs select-none">
+                <span className="font-mono text-xs font-black tracking-tight text-white">FP</span>
+              </div>
+              <div className="flex items-center gap-2">
+                <span className="font-bold text-base sm:text-lg tracking-tight text-slate-900 dark:text-white whitespace-nowrap">
+                  {t('appTitle')}
                 </span>
-              </h1>
-              <p className="text-[11px] text-slate-500 dark:text-slate-400">
-                {activePlatforms.length > 0 ? (
-                  <>
-                    <span>{t('activeBrokersPrefix')}</span>
-                    {activePlatforms.map((plat, idx) => (
-                      <span key={plat}>
-                        <span className="font-semibold text-slate-700 dark:text-slate-200">{plat}</span>
-                        {idx < activePlatforms.length - 1 && ' • '}
-                      </span>
-                    ))}
-                  </>
-                ) : (
-                  <span>{t('noPlatformData')}</span>
-                )}
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-2 sm:gap-2.5">
-            <div className="flex items-center bg-slate-100 border border-slate-200 dark:bg-slate-900 dark:border-slate-700/60 rounded-xl p-0.5 text-xs theme-switcher-container">
-              <button
-                onClick={() => setTheme('light')}
-                className={`min-w-[32px] min-h-[32px] p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                  theme === 'light' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                }`}
-                title={t('themeLight')}
-                aria-label={t('themeLight')}
-              >
-                <Sun className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setTheme('dark')}
-                className={`min-w-[32px] min-h-[32px] p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                  theme === 'dark' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                }`}
-                title={t('themeDark')}
-                aria-label={t('themeDark')}
-              >
-                <Moon className="w-3.5 h-3.5" />
-              </button>
-              <button
-                onClick={() => setTheme('auto')}
-                className={`min-w-[32px] min-h-[32px] p-1.5 rounded-lg transition cursor-pointer theme-switcher-btn flex items-center justify-center focus-visible:ring-2 focus-visible:ring-indigo-500 ${
-                  theme === 'auto' ? 'bg-indigo-600 text-white shadow-sm active' : 'text-slate-500 hover:text-slate-900 dark:text-slate-400 dark:hover:text-white'
-                }`}
-                title={t('themeAuto')}
-                aria-label={t('themeAuto')}
-              >
-                <Laptop className="w-3.5 h-3.5" />
-              </button>
+                <span className="hidden sm:inline-block text-[10px] px-2 py-0.5 rounded-full bg-slate-100 dark:bg-slate-800 text-slate-600 dark:text-slate-400 border border-slate-200 dark:border-slate-700 font-mono font-medium">
+                  SEC v2
+                </span>
+              </div>
             </div>
 
-            {/* Language Switcher [TH | EN] */}
-            <button
-              onClick={() => setLocale(locale === 'th' ? 'en' : 'th')}
-              className="btn-header-secondary px-2 py-1.5 rounded-xl bg-slate-800/90 hover:bg-slate-700 border border-slate-700/60 text-xs font-bold text-slate-300 hover:text-white transition flex items-center gap-1 shadow-sm cursor-pointer"
-              title="สลับภาษา / Switch Language (TH / EN)"
-            >
-              <Globe className="w-3.5 h-3.5 text-indigo-400" />
-              <span>{locale.toUpperCase()}</span>
-            </button>
-
-            {/* Privacy Mode Toggle Button */}
-            <button
-              onClick={togglePrivacyMode}
-              className={`min-w-[32px] min-h-[32px] px-2.5 py-1.5 rounded-xl transition cursor-pointer flex items-center gap-1.5 border text-xs font-semibold shadow-sm ${
-                isPrivacyMode
-                  ? 'bg-amber-500/15 border-amber-500/50 text-amber-500 dark:text-amber-400 hover:bg-amber-500/25'
-                  : 'btn-header-secondary bg-slate-800/90 hover:bg-slate-700 border-slate-700/60 text-slate-300 hover:text-white'
-              }`}
-              title={isPrivacyMode ? t('privacyModeOn') : t('privacyModeOff')}
-              aria-label={t('privacyModeToggle')}
-            >
-              {isPrivacyMode ? <EyeOff className="w-3.5 h-3.5 text-amber-500 dark:text-amber-400" /> : <Eye className="w-3.5 h-3.5 text-slate-400" />}
-              <span className="hidden lg:inline text-[11px] font-medium">
-                {isPrivacyMode ? (locale === 'th' ? 'ซ่อนตัวเลข' : 'Masked') : (locale === 'th' ? 'ความเป็นส่วนตัว' : 'Privacy')}
-              </span>
-            </button>
-
-            {/* View Switcher: Dashboard vs History */}
-            <div className="hidden md:flex items-center bg-slate-100 dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-xl p-0.5 text-xs mr-1">
+            {/* Main Navigation Segmented Switcher */}
+            <nav className="flex items-center bg-slate-100 dark:bg-slate-950 p-1 rounded-xl border border-slate-200/80 dark:border-slate-800 text-xs shrink-0">
               <button
                 onClick={() => {
                   setActiveView('DASHBOARD');
                   setHistoryFundFilter(null);
                 }}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
                   activeView === 'DASHBOARD'
-                    ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-white shadow-xs font-semibold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
@@ -447,89 +372,110 @@ export const App: React.FC = () => {
               </button>
               <button
                 onClick={() => setActiveView('HISTORY')}
-                className={`px-3 py-1.5 rounded-lg transition cursor-pointer flex items-center gap-1.5 ${
+                className={`px-3 py-1.5 rounded-lg font-medium transition cursor-pointer flex items-center gap-1.5 ${
                   activeView === 'HISTORY'
-                    ? 'bg-indigo-600 text-white shadow-xs font-semibold'
+                    ? 'bg-white dark:bg-slate-800 text-indigo-600 dark:text-white shadow-xs font-semibold'
                     : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-white'
                 }`}
               >
                 <Calendar className="w-3.5 h-3.5" />
                 <span>{t('navHistory')}</span>
               </button>
-            </div>
+            </nav>
+          </div>
 
-            {/* Manual Dashboard Refresh Button */}
+          {/* Right: Actions & Tools */}
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            {/* Action 1: Refresh Dashboard Data */}
             <button
               onClick={handleManualRefresh}
               disabled={isRefreshing || loading}
-              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer disabled:opacity-50"
               title={t('refresh')}
               aria-label={t('refresh')}
             >
-              <RotateCw className={`w-3.5 h-3.5 ${isRefreshing ? 'animate-spin text-indigo-400' : 'text-slate-400'}`} />
-              <span className="hidden lg:inline">{isRefreshing ? t('refreshing') : t('refresh')}</span>
+              <RotateCw className={`w-4 h-4 ${isRefreshing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
             </button>
 
-            {/* Sync NAV button */}
+            {/* Action 2: Sync SEC NAV */}
             <button
               onClick={handleSyncNav}
               disabled={syncing}
-              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm disabled:opacity-50 cursor-pointer"
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer disabled:opacity-50"
               title={t('syncNav')}
+              aria-label={t('syncNav')}
             >
-              <RefreshCw className={`w-3.5 h-3.5 ${syncing ? 'animate-spin text-indigo-400' : ''}`} />
-              <span className="hidden md:inline">{syncing ? t('syncing') : t('syncNav')}</span>
+              <RefreshCw className={`w-4 h-4 ${syncing ? 'animate-spin text-indigo-600 dark:text-indigo-400' : ''}`} />
             </button>
 
+            {/* Action 3: Privacy Mode Toggle */}
+            <button
+              onClick={togglePrivacyMode}
+              className={`p-2 rounded-xl transition cursor-pointer border ${
+                isPrivacyMode
+                  ? 'bg-amber-500/10 border-amber-500/30 text-amber-600 dark:text-amber-400'
+                  : 'text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border-transparent hover:border-slate-200 dark:hover:border-slate-700'
+              }`}
+              title={isPrivacyMode ? t('privacyModeOn') : t('privacyModeOff')}
+              aria-label={t('privacyModeToggle')}
+            >
+              {isPrivacyMode ? <EyeOff className="w-4 h-4 text-amber-500" /> : <Eye className="w-4 h-4" />}
+            </button>
+
+            {/* Action 4: Import Statement (PDF / CSV) */}
             <button
               onClick={() => setIsCsvModalOpen(true)}
-              className="btn-importer px-3 py-2 rounded-xl bg-gradient-to-r from-indigo-950/80 to-purple-950/80 hover:from-indigo-900/90 hover:to-purple-900/90 text-indigo-200 border border-indigo-700/50 text-xs font-semibold transition flex items-center gap-1.5 shadow-sm cursor-pointer focus-visible:ring-2 focus-visible:ring-indigo-500"
+              className="px-2.5 sm:px-3 py-1.5 rounded-xl bg-slate-100 dark:bg-slate-800 hover:bg-slate-200 dark:hover:bg-slate-700 border border-slate-200 dark:border-slate-700 text-slate-700 dark:text-slate-300 text-xs font-medium transition flex items-center gap-1.5 cursor-pointer"
               title={t('importerSubtitle')}
             >
               <FileSpreadsheet className="w-3.5 h-3.5 text-indigo-600 dark:text-indigo-400" />
               <span className="hidden sm:inline">{t('importData')}</span>
             </button>
 
-            {/* History Full-Page Switch Button (Mobile / Quick Toggle) */}
-            <button
-              onClick={() => {
-                if (activeView === 'DASHBOARD') {
-                  setActiveView('HISTORY');
-                } else {
-                  setActiveView('DASHBOARD');
-                  setHistoryFundFilter(null);
-                }
-              }}
-              className={`md:hidden px-2.5 py-2 rounded-xl border text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer ${
-                activeView === 'HISTORY'
-                  ? 'bg-indigo-600 text-white border-indigo-500 shadow-indigo-600/30'
-                  : 'btn-header-secondary bg-slate-800/90 hover:bg-slate-700 text-slate-300 border-slate-700/60'
-              }`}
-            >
-              <History className="w-3.5 h-3.5" />
-            </button>
-
-            {/* Settings & Gmail Auto-Sync */}
+            {/* Action 5: Settings Modal */}
             <button
               onClick={() => setIsSettingsModalOpen(true)}
-              className="btn-header-secondary px-2.5 py-2 rounded-xl bg-slate-800/90 hover:bg-slate-700 text-slate-300 border border-slate-700/60 text-xs font-medium transition flex items-center gap-1.5 shadow-sm cursor-pointer"
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer"
               title={t('settings')}
+              aria-label={t('settings')}
             >
-              <Sliders className="w-3.5 h-3.5 text-indigo-400" />
-              <span className="hidden md:inline">{t('settings')}</span>
+              <Sliders className="w-4 h-4 text-slate-600 dark:text-slate-400" />
             </button>
 
-            {/* Add Transaction button */}
+            {/* Action 6: Primary CTA "+ Record Transaction" */}
             <button
               onClick={() => setIsAddModalOpen(true)}
-              className="btn-primary-indigo px-3 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-lg shadow-indigo-600/30 cursor-pointer"
+              className="px-3 py-1.5 sm:py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold transition flex items-center gap-1.5 shadow-xs cursor-pointer ml-1"
             >
               <Plus className="w-4 h-4 text-white" />
-              <span className="hidden sm:inline text-white">{t('addTransaction')}</span>
+              <span className="hidden md:inline text-white">{t('addTransaction')}</span>
             </button>
 
-            {/* Clerk User Avatar & Profile Management */}
-            <div className="pl-1.5 border-l border-slate-800 flex items-center">
+            {/* System Utilities Divider */}
+            <div className="h-5 w-px bg-slate-200 dark:bg-slate-800 mx-1 hidden sm:block" />
+
+            {/* Theme Toggle Button (Cycles Light / Dark) */}
+            <button
+              onClick={() => setTheme(theme === 'dark' ? 'light' : 'dark')}
+              className="p-2 rounded-xl text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 border border-transparent hover:border-slate-200 dark:hover:border-slate-700 transition cursor-pointer"
+              title={theme === 'dark' ? t('themeLight') : t('themeDark')}
+              aria-label="Toggle Theme"
+            >
+              {theme === 'dark' ? <Sun className="w-4 h-4 text-amber-400" /> : <Moon className="w-4 h-4 text-slate-600" />}
+            </button>
+
+            {/* Language Toggle [TH | EN] */}
+            <button
+              onClick={() => setLocale(locale === 'th' ? 'en' : 'th')}
+              className="px-2 py-1.5 rounded-xl text-xs font-bold text-slate-600 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 border border-slate-200 dark:border-slate-700 transition flex items-center gap-1 cursor-pointer"
+              title="สลับภาษา (TH / EN)"
+            >
+              <Globe className="w-3 h-3 text-indigo-500" />
+              <span>{locale.toUpperCase()}</span>
+            </button>
+
+            {/* Clerk User Avatar */}
+            <div className="pl-1 flex items-center">
               <UserButton />
             </div>
           </div>
