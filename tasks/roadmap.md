@@ -151,6 +151,23 @@ flowchart TD
 
 ---
 
+### 🌐 Phase 6: General Availability (GA) & Open-Source Readiness (การขยายสู่ระบบทั่วไปสำหรับผู้ใช้ทุกคน)
+*เป้าหมาย: ขยายระบบจาก Personal Tool สู่ Self-Hosted Open-Source Solution ที่ผู้ใช้ทุกคนสามารถนำไปรันบนเซิร์ฟเวอร์ส่วนตัวได้อย่างยืดหยุ่น*
+
+1. **Milestone 6.1: Dynamic Statement Password & AMC Profile Management (UI-Driven Onboarding)**
+   - ย้ายการกำหนดรูปแบบรหัสผ่าน PDF (วันเกิด, เลขบัตรประชาชน, Custom Passwords) จากไฟล์ config/JSON มาเป็นหน้าจอ Settings UI ที่ผู้ใช้แต่ละคนสามารถกดเพิ่ม/ลบ/แก้ไขได้เองอย่างอิสระ
+2. **Milestone 6.2: Extensible Statement Parser Registry (Strategy Pattern)**
+   - ปรับโครงสร้างระบบ Parser ให้เป็น Plugin/Strategy Architecture รองรับการแกะ Confirmation Note ของ บลจ. ชั้นนำของไทยเพิ่มเติมอย่างเป็นระบบ: บัวหลวง (BBLAM), กรุงศรี (KSAM), กรุงไทย (KTAM), ยูโอบี (UOBAM) และเกียรตินาคินภัทร (KKPAM)
+3. **Milestone 6.3: Universal Multi-Asset & Multi-Broker Schema**
+   - ขยาย Schema ให้รองรับหุ้นไทย (เช่น สเตตเมนต์จาก Settrade Streaming / InnovestX / Liberator) ควบคู่กับหุ้นสหรัฐฯ (Dime!)
+   - รองรับรูปแบบกองทุนสำรองเลี้ยงชีพ (PVD) จากสถาบันอื่นๆ (TISCO, BBLAM, MFC)
+4. **Milestone 6.4: One-Click Self-Hosted Containerization (Docker & Compose)**
+   - จัดทำ Multi-stage `Dockerfile` (รวม Rust Binary ขนาดกะทัดรัด + Frontend Static Assets) และ `docker-compose.yml` ให้ผู้ใช้คนอื่นสามารถสั่ง `docker compose up -d` ใช้งานได้ทันทีโดยไม่ต้องติดตั้ง Rust/Node/Python บนเครื่อง
+5. **Milestone 6.5: Generic CSV / Excel Ingestion Template**
+   - จัดทำเทมเพลตมาตรฐานสำหรับผู้ใช้ที่มีพอร์ตจากโบรกเกอร์หรือสถาบันการเงินที่ไม่มีอีเมลสเตตเมนต์ ให้สามารถนำเข้าข้อมูลย้อนหลังผ่าน CSV ได้โดยตรง
+
+---
+
 ## 4. สรุป Action Items ที่จะเริ่มทำในลำดับถัดไป (Immediate Next Steps)
 
 1. **สร้าง Milestone 3.1 (กราฟมูลค่าพอร์ตย้อนหลัง Historical Performance Chart):**
