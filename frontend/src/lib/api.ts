@@ -14,6 +14,10 @@ export interface HoldingPosition {
   unrealized_pl_pct: string;
   realized_pl: string;
   total_dividend: string;
+  currency?: string;
+  price_foreign?: string;
+  avg_cost_foreign?: string;
+  exchange_rate?: string;
 }
 
 export interface PlatformSummary {
@@ -110,6 +114,7 @@ export async function createTransaction(payload: {
   trans_date: string;
   units: string;
   unit_price: string;
+  total_amount?: string;
   fee?: string;
   note?: string;
 }): Promise<Transaction> {
@@ -139,6 +144,27 @@ export async function createTransactionsBatch(payloads: Array<{
     body: JSON.stringify(payloads),
   });
   if (!res.ok) throw new Error('Failed to batch import transactions');
+  return res.json();
+}
+
+export async function updateTransaction(id: string, payload: {
+  proj_id: string;
+  fund_abbr?: string;
+  platform: string;
+  trans_type: string;
+  trans_date: string;
+  units: string;
+  unit_price: string;
+  total_amount?: string;
+  fee?: string;
+  note?: string;
+}): Promise<{ success: boolean; message: string; transaction: Transaction }> {
+  const res = await authFetch(`${API_BASE}/transactions/${id}`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to update transaction');
   return res.json();
 }
 
@@ -172,7 +198,7 @@ export async function getBrokers(): Promise<BrokerItem[]> {
   return res.json();
 }
 
-export async function triggerNavSync(): Promise<{ success: boolean; updated_funds_count: number }> {
+export async function triggerNavSync(): Promise<{ success: boolean; updated_funds_count: number; latest_nav_date?: string }> {
   const res = await authFetch(`${API_BASE}/funds/sync`, {
     method: 'POST',
   });
@@ -352,6 +378,285 @@ export async function syncEmailStatements(): Promise<EmailSyncResult> {
   if (!res.ok) {
     const err = await res.text();
     throw new Error(err || 'Failed to sync emails');
+  }
+  return res.json();
+}
+
+export interface SyncCacheStats {
+  total_emails: number;
+  by_broker: Record<string, number>;
+  total_attachments: number;
+  pending_count: number;
+}
+
+export interface CachedEmailItem {
+  message_id: string;
+  broker: string;
+  subject: string;
+  email_date: string;
+  tx_count: number;
+  created_at?: string;
+}
+
+export interface ResetSyncCachePayload {
+  broker?: string;
+  clear_attachments?: boolean;
+  clear_pending?: boolean;
+}
+
+export async function getSyncCacheStats(): Promise<SyncCacheStats> {
+  const res = await authFetch(`${API_BASE}/email/sync/cache/stats`);
+  if (!res.ok) throw new Error('Failed to fetch sync cache stats');
+  return res.json();
+}
+
+export async function resetSyncCache(payload: ResetSyncCachePayload): Promise<{
+  success: boolean;
+  deleted_emails: number;
+  deleted_attachments: number;
+  deleted_pending: number;
+}> {
+  const res = await authFetch(`${API_BASE}/email/sync/cache/reset`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) throw new Error('Failed to reset sync cache');
+  return res.json();
+}
+
+export async function listCachedEmails(broker?: string, limit = 100): Promise<CachedEmailItem[]> {
+  const url = `${API_BASE}/email/sync/cache/list?${broker ? `broker=${encodeURIComponent(broker)}&` : ''}limit=${limit}`;
+  const res = await authFetch(url);
+  if (!res.ok) throw new Error('Failed to list cached emails');
+  return res.json();
+}
+
+export async function deleteCachedEmail(messageId: string): Promise<{ deleted: boolean }> {
+  const res = await authFetch(`${API_BASE}/email/sync/cache/${encodeURIComponent(messageId)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) throw new Error('Failed to delete cached email');
+  return res.json();
+}
+
+export interface EmailBrokerConfig {
+  key: string;
+  name: string;
+  enabled: boolean;
+  sender_emails: string[];
+  subject_includes: string[];
+  subject_excludes: string[];
+  extraction_type: string;
+  password_patterns: string[];
+  ai_prompt_variant: string;
+}
+
+export async function getEmailBrokerConfigs(): Promise<EmailBrokerConfig[]> {
+  const res = await authFetch(`${API_BASE}/email/sync/brokers`);
+  if (!res.ok) throw new Error('Failed to fetch broker configs');
+  return res.json();
+}
+
+export async function updateEmailBrokerConfigs(configs: EmailBrokerConfig[]): Promise<EmailBrokerConfig[]> {
+  const res = await authFetch(`${API_BASE}/email/sync/brokers`, {
+    method: 'PUT',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(configs),
+  });
+  if (!res.ok) throw new Error('Failed to update broker configs');
+  return res.json();
+}
+
+export async function resetEmailBrokerConfigs(): Promise<EmailBrokerConfig[]> {
+  const res = await authFetch(`${API_BASE}/email/sync/brokers/reset`, {
+    method: 'POST',
+  });
+  if (!res.ok) throw new Error('Failed to reset broker configs');
+  return res.json();
+}
+
+// ==========================================
+// Staged Import (Review Before Commit) APIs
+// ==========================================
+
+export interface FundSuggestion {
+  proj_id: string;
+  fund_abbr: string;
+  fund_name_th?: string;
+  fund_name_en?: string;
+  last_nav?: string;
+}
+
+export interface PendingTransaction {
+  id: string;
+  sync_batch_id: string;
+  source_file?: string;
+  source_email?: string;
+  platform: string;
+  raw_fund_name: string;
+  proj_id?: string;
+  fund_abbr?: string;
+  fund_name_th?: string;
+  fund_name_en?: string;
+  match_confidence: 'EXACT' | 'FUZZY' | 'NONE';
+  trans_type: string;
+  trans_date: string;
+  units: string;
+  unit_price: string;
+  nav_source: string;
+  total_amount: string;
+  fee: string;
+  note?: string;
+  status: string;
+  suggestions?: FundSuggestion[];
+  created_at?: string;
+}
+
+export interface NavByDateResult {
+  nav: string;
+  nav_date: string;
+  nav_source: string;
+  is_exact_date: boolean;
+}
+
+export async function getPendingTransactions(status = 'PENDING'): Promise<PendingTransaction[]> {
+  const res = await authFetch(`${API_BASE}/transactions/pending?status=${encodeURIComponent(status)}`, {
+    method: 'GET',
+  });
+  if (!res.ok) {
+    throw new Error('Failed to load pending transactions');
+  }
+  return res.json();
+}
+
+export async function getNavByDate(projId: string, date: string, fundAbbr?: string): Promise<NavByDateResult> {
+  let url = `${API_BASE}/nav/by-date?proj_id=${encodeURIComponent(projId)}&date=${encodeURIComponent(date)}`;
+  if (fundAbbr) {
+    url += `&fund_abbr=${encodeURIComponent(fundAbbr)}`;
+  }
+  const res = await authFetch(url, {
+    method: 'GET',
+  });
+  if (!res.ok) {
+    throw new Error('Failed to get NAV by date');
+  }
+  return res.json();
+}
+
+export async function getNavDatesForMonth(
+  projId: string,
+  month: string,
+  fundAbbr?: string
+): Promise<{
+  proj_id: string;
+  month: string;
+  nav_dates: Record<string, string>;
+}> {
+  let url = `${API_BASE}/nav/month-dates?proj_id=${encodeURIComponent(projId)}&month=${encodeURIComponent(month)}`;
+  if (fundAbbr) {
+    url += `&fund_abbr=${encodeURIComponent(fundAbbr)}`;
+  }
+  const res = await authFetch(url, {
+    method: 'GET',
+  });
+  if (!res.ok) {
+    throw new Error('Failed to get NAV dates for month');
+  }
+  return res.json();
+}
+
+export async function updatePendingTransaction(id: string, patch: Partial<PendingTransaction>): Promise<void> {
+  const res = await authFetch(`${API_BASE}/transactions/pending/${encodeURIComponent(id)}`, {
+    method: 'PATCH',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(patch),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to update pending transaction');
+  }
+}
+
+export async function deletePendingTransaction(id: string): Promise<void> {
+  const res = await authFetch(`${API_BASE}/transactions/pending/${encodeURIComponent(id)}`, {
+    method: 'DELETE',
+  });
+  if (!res.ok) {
+    throw new Error('Failed to delete pending transaction');
+  }
+}
+
+export async function batchDeletePending(ids: string[]): Promise<{ count: number }> {
+  const res = await authFetch(`${API_BASE}/transactions/pending/batch-delete`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ ids }),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to batch delete pending transactions');
+  }
+  return res.json();
+}
+
+export async function commitPendingTransactions(payload: { ids?: string[]; all?: boolean }): Promise<{ count: number }> {
+  const res = await authFetch(`${API_BASE}/transactions/pending/commit`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to commit pending transactions');
+  }
+  return res.json();
+}
+
+export async function createPendingTransaction(payload: {
+  platform: string;
+  raw_fund_name: string;
+  proj_id?: string;
+  fund_abbr?: string;
+  trans_type: string;
+  trans_date: string;
+  units: string;
+  unit_price: string;
+  total_amount?: string;
+  fee?: string;
+  note?: string;
+}): Promise<{ id: string }> {
+  const res = await authFetch(`${API_BASE}/transactions/pending`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+  });
+  if (!res.ok) {
+    throw new Error('Failed to create pending transaction');
+  }
+  return res.json();
+}
+
+export async function createPendingTransactionsBatch(payloads: Array<{
+  platform: string;
+  raw_fund_name: string;
+  proj_id?: string;
+  fund_abbr?: string;
+  trans_type: string;
+  trans_date: string;
+  units: string;
+  unit_price: string;
+  total_amount?: string;
+  fee?: string;
+  note?: string;
+  sync_batch_id?: string;
+  source_file?: string;
+}>): Promise<{ inserted_count: number; status: string }> {
+  const res = await authFetch(`${API_BASE}/transactions/pending/batch`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payloads),
+  });
+  if (!res.ok) {
+    const err = await res.text();
+    throw new Error(err || 'Failed to create pending transactions batch');
   }
   return res.json();
 }

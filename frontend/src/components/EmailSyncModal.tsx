@@ -1,8 +1,10 @@
-import React, { useEffect, useState, useRef } from 'react';
+import React, { useEffect, useState, useRef, useMemo } from 'react';
 import {
   getEmailSyncStatus,
   cancelEmailSync,
+  getPendingTransactions,
   type EmailSyncProgress,
+  type PendingTransaction,
 } from '../lib/api';
 import {
   RotateCw,
@@ -13,12 +15,17 @@ import {
   Sparkles,
   Terminal,
   ArrowRight,
+  Building2,
+  ChevronRight,
 } from 'lucide-react';
+import { SyncCacheManagerModal } from './SyncCacheManagerModal';
+import { useI18n } from '../lib/i18n';
+import { formatLiveLog } from '../lib/logFormatter';
 
 interface Props {
   isOpen: boolean;
   onClose: () => void;
-  onComplete?: () => void;
+  onComplete?: (selectedPlatform?: string) => void;
 }
 
 const PLATFORMS = [
@@ -30,10 +37,15 @@ const PLATFORMS = [
 ];
 
 export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete }) => {
+  const { locale, t } = useI18n();
   const [progress, setProgress] = useState<EmailSyncProgress | null>(null);
   const [cancelling, setCancelling] = useState(false);
   const [confirmCancel, setConfirmCancel] = useState(false);
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
+  const [pendingItems, setPendingItems] = useState<PendingTransaction[]>([]);
+  const [hasFetchedPending, setHasFetchedPending] = useState(false);
+  const [isCacheManagerOpen, setIsCacheManagerOpen] = useState(false);
+  const [logViewMode, setLogViewMode] = useState<'friendly' | 'raw'>('friendly');
   const logsEndRef = useRef<HTMLDivElement>(null);
 
   // Poll status while open
@@ -64,6 +76,29 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
     };
   }, [isOpen]);
 
+  const isRunning = progress?.is_running ?? false;
+  const isCompleted = progress?.completed && !isRunning;
+  const isCancelled = progress?.cancelled && !isRunning;
+
+  // When completed, fetch pending items grouped by bank
+  useEffect(() => {
+    if (isCompleted && !hasFetchedPending) {
+      getPendingTransactions('PENDING')
+        .then((items) => {
+          setPendingItems(items);
+          setHasFetchedPending(true);
+        })
+        .catch(() => {});
+    }
+  }, [isCompleted, hasFetchedPending]);
+
+  // Reset flag when starting a new scan run
+  useEffect(() => {
+    if (isRunning) {
+      setHasFetchedPending(false);
+    }
+  }, [isRunning]);
+
   // Auto scroll logs
   useEffect(() => {
     if (logsEndRef.current) {
@@ -71,23 +106,166 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
     }
   }, [progress?.recent_logs, progress?.log_tail]);
 
+  const bankStats = useMemo(() => {
+    const map: Record<string, { key: string; label: string; count: number; totalAmount: number }> = {};
+    PLATFORMS.forEach((p) => {
+      map[p.key] = { key: p.key, label: p.label, count: 0, totalAmount: 0 };
+    });
+
+    pendingItems.forEach((it) => {
+      const p = (it.platform || 'OTHER').toUpperCase();
+      if (!map[p]) {
+        map[p] = { key: p, label: it.platform, count: 0, totalAmount: 0 };
+      }
+      map[p].count += 1;
+      map[p].totalAmount += parseFloat(it.total_amount) || 0;
+    });
+
+    return Object.values(map).filter((b) => b.count > 0);
+  }, [pendingItems]);
+
+  const getBankBadgeStyle = (key: string) => {
+    switch (key.toUpperCase()) {
+      case 'TTB':
+        return 'bg-blue-100 dark:bg-blue-950/70 text-blue-700 dark:text-blue-300 border-blue-200 dark:border-blue-800';
+      case 'DIME':
+        return 'bg-violet-100 dark:bg-violet-950/70 text-violet-700 dark:text-violet-300 border-violet-200 dark:border-violet-800';
+      case 'SCB':
+        return 'bg-purple-100 dark:bg-purple-950/70 text-purple-700 dark:text-purple-300 border-purple-200 dark:border-purple-800';
+      case 'KBANK':
+        return 'bg-emerald-100 dark:bg-emerald-950/70 text-emerald-700 dark:text-emerald-300 border-emerald-200 dark:border-emerald-800';
+      case 'KBANK_PVD':
+        return 'bg-teal-100 dark:bg-teal-950/70 text-teal-700 dark:text-teal-300 border-teal-200 dark:border-teal-800';
+      default:
+        return 'bg-slate-100 dark:bg-slate-800 text-slate-700 dark:text-slate-300 border-slate-200 dark:border-slate-700';
+    }
+  };
+
+  const getTerminalPlatformBadgeStyle = (platform?: string) => {
+    switch ((platform || '').toUpperCase()) {
+      case 'TTB':
+        return 'bg-blue-100 text-blue-800 border-blue-300 dark:bg-blue-950 dark:text-blue-200 dark:border-blue-500/80';
+      case 'DIME':
+      case 'DIME_STOCK':
+        return 'bg-violet-100 text-violet-800 border-violet-300 dark:bg-violet-950 dark:text-violet-200 dark:border-violet-500/80';
+      case 'SCB':
+        return 'bg-purple-100 text-purple-800 border-purple-300 dark:bg-purple-950 dark:text-purple-200 dark:border-purple-500/80';
+      case 'KBANK':
+        return 'bg-teal-100 text-teal-800 border-teal-300 dark:bg-teal-950 dark:text-teal-200 dark:border-teal-500/80';
+      case 'KBANK_PVD':
+        return 'bg-emerald-100 text-emerald-800 border-emerald-300 dark:bg-emerald-950 dark:text-emerald-200 dark:border-emerald-500/80';
+      case 'SYNC':
+        return 'bg-indigo-100 text-indigo-800 border-indigo-300 dark:bg-indigo-950 dark:text-indigo-200 dark:border-indigo-500/80';
+      default:
+        return 'bg-slate-200 text-slate-800 border-slate-300 dark:bg-slate-800 dark:text-slate-200 dark:border-slate-600';
+    }
+  };
+
+  const renderRawLogLine = (line: string) => {
+    let rest = line;
+    let ts: string | null = null;
+    const tsMatch = rest.match(/^(\d{4}-\d{2}-\d{2}\s+\d{2}:\d{2}:\d{2}|\[\d{2}:\d{2}:\d{2}\])\s*/);
+    if (tsMatch) {
+      ts = tsMatch[1];
+      rest = rest.slice(tsMatch[0].length);
+    }
+
+    const tokenRegex = /(\[[^\]]+\]|'[^']+'|\((?:[\d,.]+\s+THB|[\d.]+\s+shares[^\)]*)\)|\b\d{4}-\d{2}-\d{2}\b)/g;
+    const parts: React.ReactNode[] = [];
+    let lastIndex = 0;
+    let match: RegExpExecArray | null;
+
+    while ((match = tokenRegex.exec(rest)) !== null) {
+      if (match.index > lastIndex) {
+        parts.push(
+          <span key={`text-${lastIndex}`} className="text-slate-800 dark:text-slate-100 font-medium">
+            {rest.slice(lastIndex, match.index)}
+          </span>
+        );
+      }
+      const token = match[0];
+      const key = `token-${match.index}`;
+
+      if (token === '[INFO]') {
+        parts.push(<span key={key} className="text-sky-700 dark:text-sky-300 font-bold mr-1">[INFO]</span>);
+      } else if (token === '[WARNING]') {
+        parts.push(<span key={key} className="text-amber-700 dark:text-amber-300 font-bold mr-1">[WARNING]</span>);
+      } else if (token === '[ERROR]') {
+        parts.push(<span key={key} className="text-rose-700 dark:text-rose-300 font-bold mr-1">[ERROR]</span>);
+      } else if (token === '[+]' || token === '[✓]' || token === '[\u2713]') {
+        parts.push(<span key={key} className="text-emerald-700 dark:text-emerald-300 font-bold mr-1">{token}</span>);
+      } else if (token === '[✗]') {
+        parts.push(<span key={key} className="text-rose-700 dark:text-rose-300 font-bold mr-1">[✗]</span>);
+      } else if (token === '[PENDING]') {
+        parts.push(<span key={key} className="text-purple-700 dark:text-purple-300 font-bold mr-1">[PENDING]</span>);
+      } else if (token === '[STOCK]') {
+        parts.push(<span key={key} className="text-cyan-700 dark:text-cyan-300 font-bold mr-1">[STOCK]</span>);
+      } else if (token === '[SYNC]') {
+        parts.push(<span key={key} className="text-indigo-700 dark:text-indigo-300 font-bold mr-1">[SYNC]</span>);
+      } else if (/^\[(TTB|SCB|DIME|KBANK|KBANK_PVD)\]$/i.test(token)) {
+        const plat = token.slice(1, -1).toUpperCase();
+        let color = 'text-blue-700 dark:text-blue-300';
+        if (plat === 'DIME') color = 'text-violet-700 dark:text-violet-300';
+        else if (plat === 'SCB') color = 'text-purple-700 dark:text-purple-300';
+        else if (plat === 'KBANK') color = 'text-teal-700 dark:text-teal-300';
+        else if (plat === 'KBANK_PVD') color = 'text-emerald-700 dark:text-emerald-300';
+        parts.push(<span key={key} className={`${color} font-bold mr-1`}>{token}</span>);
+      } else if (/^\[\d+\/\d+\]$/.test(token)) {
+        parts.push(<span key={key} className="text-amber-700 dark:text-amber-300 font-semibold mr-1">{token}</span>);
+      } else if (token.startsWith("'") && token.endsWith("'")) {
+        parts.push(<span key={key} className="text-amber-800 dark:text-amber-200 font-medium">{token}</span>);
+      } else if (token.startsWith("(") && token.includes("THB")) {
+        parts.push(<span key={key} className="text-emerald-700 dark:text-emerald-300 font-bold">{token}</span>);
+      } else if (/^\d{4}-\d{2}-\d{2}$/.test(token)) {
+        parts.push(<span key={key} className="text-cyan-700 dark:text-cyan-300 font-medium">{token}</span>);
+      } else {
+        parts.push(<span key={key} className="text-slate-700 dark:text-slate-300">{token}</span>);
+      }
+
+      lastIndex = tokenRegex.lastIndex;
+    }
+
+    if (lastIndex < rest.length) {
+      parts.push(
+        <span key={`text-${lastIndex}`} className="text-slate-800 dark:text-slate-100 font-medium">
+          {rest.slice(lastIndex)}
+        </span>
+      );
+    }
+
+    return (
+      <div className="py-0.5 font-mono text-xs leading-relaxed break-all border-b border-slate-200/80 dark:border-slate-900/60 last:border-b-0">
+        {ts && (
+          <span className="text-slate-500 dark:text-slate-400 font-semibold select-none mr-2 font-mono">
+            {ts}
+          </span>
+        )}
+        {parts}
+      </div>
+    );
+  };
+
   if (!isOpen) return null;
 
-  const isRunning = progress?.is_running ?? false;
-  const isCompleted = progress?.completed && !isRunning;
-  const isCancelled = progress?.cancelled && !isRunning;
+  const statusMatch = progress?.status_text?.match(/\[([A-Z_]+)\]\s+\[(\d+)\/(\d+)\]/i);
+  const parsedBroker = statusMatch ? statusMatch[1].toUpperCase() : '';
+  const parsedEmailIndex = statusMatch ? parseInt(statusMatch[2], 10) : 0;
+  const parsedTotalEmails = statusMatch ? parseInt(statusMatch[3], 10) : 0;
 
-  const currentBroker = (progress?.broker || '').toUpperCase();
+  const currentBroker = (progress?.broker || parsedBroker || '').toUpperCase();
   const currentBrokerIdx = PLATFORMS.findIndex(
     (p) => p.key === currentBroker || (currentBroker === 'KBANK_PVD' && p.key === 'KBANK_PVD')
   );
+
+  const currentEmailIndex = progress?.email_index ?? (parsedEmailIndex || 0);
+  const currentTotalEmails = progress?.total_emails || parsedTotalEmails || 0;
 
   // Calculate percentage
   let progressPct = 0;
   if (isCompleted) {
     progressPct = 100;
-  } else if (progress?.total_emails && progress.total_emails > 0) {
-    const emailRatio = (progress.email_index || 0) / progress.total_emails;
+  } else if (currentTotalEmails > 0) {
+    const emailRatio = currentEmailIndex / currentTotalEmails;
     const baseBrokerPct = ((currentBrokerIdx >= 0 ? currentBrokerIdx : 0) / PLATFORMS.length) * 100;
     const brokerStepPct = (1 / PLATFORMS.length) * 100;
     progressPct = Math.min(99, Math.round(baseBrokerPct + emailRatio * brokerStepPct));
@@ -113,9 +291,9 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
     }
   };
 
-  const handleFinish = () => {
+  const handleFinish = (platform: string = 'ALL') => {
     if (onComplete) {
-      onComplete();
+      onComplete(platform);
     }
     onClose();
   };
@@ -174,13 +352,24 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
               </p>
             </div>
           </div>
-          <button
-            onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-            title="ปิดหน้าต่าง (การสแกนยังคงทำงานต่อในพื้นหลัง)"
-          >
-            <X className="w-5 h-5" />
-          </button>
+          <div className="flex items-center gap-1.5">
+            <button
+              type="button"
+              onClick={() => setIsCacheManagerOpen(true)}
+              className="px-2.5 py-1.5 rounded-lg border border-amber-300 dark:border-amber-800/80 bg-amber-50 dark:bg-amber-950/40 text-amber-700 dark:text-amber-300 hover:bg-amber-100 text-xs font-semibold flex items-center gap-1 transition cursor-pointer"
+              title="จัดการแคชอีเมลและรีเซ็ตประวัติเพื่อสแกนใหม่"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span className="hidden sm:inline">ล้างแคช / สแกนใหม่</span>
+            </button>
+            <button
+              onClick={onClose}
+              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-600 dark:hover:text-slate-200 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              title="ปิดหน้าต่าง (การสแกนยังคงทำงานต่อในพื้นหลัง)"
+            >
+              <X className="w-5 h-5" />
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}
@@ -251,12 +440,18 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
           {/* Real-time Stats Grid */}
           <div className="grid grid-cols-2 sm:grid-cols-4 gap-3 text-xs">
             <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/60 border border-slate-200 dark:border-slate-700/60">
-              <div className="text-slate-500 dark:text-slate-400 text-[11px]">สแกนแล้ว</div>
+              <div className="text-slate-500 dark:text-slate-400 text-[11px]">
+                {isRunning && currentBroker ? `สแกน ${currentBroker}` : 'สแกนแล้วทั้งหมด'}
+              </div>
               <div className="text-lg font-bold font-mono text-slate-800 dark:text-slate-100 mt-0.5">
-                {progress?.emails_scanned || 0}
-                {progress?.total_emails ? (
-                  <span className="text-xs text-slate-400 font-normal"> / {progress.total_emails}</span>
-                ) : null}
+                {isRunning && currentTotalEmails > 0 ? (
+                  <>
+                    <span>{currentEmailIndex > 0 ? currentEmailIndex : (progress?.emails_scanned || 0)}</span>
+                    <span className="text-xs text-slate-400 font-normal"> / {currentTotalEmails}</span>
+                  </>
+                ) : (
+                  <span>{progress?.emails_scanned || 0} ฉบับ</span>
+                )}
               </div>
             </div>
 
@@ -295,44 +490,134 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
             </div>
           )}
 
+          {/* Bank / Platform Breakdown (Appears when completed) */}
+          {isCompleted && bankStats.length > 0 && (
+            <div className="p-4 rounded-2xl bg-gradient-to-br from-indigo-50/90 via-purple-50/40 to-slate-50 dark:from-indigo-950/40 dark:via-purple-950/20 dark:to-slate-900/40 border border-indigo-200/80 dark:border-indigo-800/60 space-y-3">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1">
+                <div className="flex items-center gap-2">
+                  <div className="p-1.5 rounded-lg bg-indigo-600 text-white shadow-xs">
+                    <Building2 className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="text-xs sm:text-sm font-bold text-slate-900 dark:text-white">
+                      เลือกธนาคาร / สถาบันการเงินที่ต้องการนำเข้า
+                    </h3>
+                    <p className="text-[11px] text-slate-500 dark:text-slate-400">
+                      พบรายการรอตรวจสอบทั้งหมด {pendingItems.length} รายการ สามารถคลิกเลือกเฉพาะธนาคารที่ต้องการได้ทันที
+                    </p>
+                  </div>
+                </div>
+              </div>
+
+              {/* Grid of Bank Cards */}
+              <div className="grid grid-cols-1 sm:grid-cols-2 gap-2.5 pt-1">
+                {bankStats.map((bank) => (
+                  <div
+                    key={bank.key}
+                    className="p-3 bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-xl hover:border-indigo-400 dark:hover:border-indigo-600 transition flex items-center justify-between shadow-xs group"
+                  >
+                    <div className="min-w-0 pr-2">
+                      <div className="flex items-center gap-2">
+                        <span className={`px-2 py-0.5 rounded text-xs font-bold ${getBankBadgeStyle(bank.key)}`}>
+                          {bank.label}
+                        </span>
+                        <span className="text-xs font-bold text-slate-800 dark:text-slate-100">
+                          {bank.count} รายการ
+                        </span>
+                      </div>
+                      <div className="text-[11px] text-slate-500 dark:text-slate-400 mt-1 font-mono">
+                        ยอดรวม ฿{bank.totalAmount.toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                      </div>
+                    </div>
+
+                    <button
+                      type="button"
+                      onClick={() => handleFinish(bank.key)}
+                      className="px-3 py-1.5 rounded-lg bg-indigo-50 hover:bg-indigo-600 hover:text-white dark:bg-indigo-950/60 dark:hover:bg-indigo-600 text-indigo-700 dark:text-indigo-300 text-xs font-semibold flex items-center gap-1 transition-all cursor-pointer shrink-0 shadow-2xs group-hover:scale-[1.02]"
+                    >
+                      <span>เลือก {bank.label}</span>
+                      <ChevronRight className="w-3.5 h-3.5" />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
+
           {/* Live Activity Terminal Window */}
           <div className="space-y-2">
-            <div className="flex items-center justify-between text-xs text-slate-500 dark:text-slate-400 font-medium">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-1.5 text-xs text-slate-500 dark:text-slate-400 font-medium">
               <span className="flex items-center gap-1.5">
-                <Terminal className="w-3.5 h-3.5" />
-                <span>บันทึกการทำงานแบบเรียลไทม์ (Live Logs)</span>
+                <Terminal className="w-3.5 h-3.5 text-indigo-400" />
+                <span>{t('liveLogs')}</span>
               </span>
-              <span className="font-mono text-[10px] text-slate-400">auto-updating</span>
+
+              {/* View Mode Toggle */}
+              <div className="flex items-center gap-1 bg-slate-100 dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-lg p-0.5 text-[11px]">
+                <button
+                  type="button"
+                  onClick={() => setLogViewMode('friendly')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer flex items-center gap-1 ${
+                    logViewMode === 'friendly'
+                      ? 'bg-indigo-600 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <span>{t('logModeFriendly')}</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => setLogViewMode('raw')}
+                  className={`px-2.5 py-1 rounded-md font-medium transition cursor-pointer flex items-center gap-1 ${
+                    logViewMode === 'raw'
+                      ? 'bg-slate-700 text-white shadow-xs'
+                      : 'text-slate-600 dark:text-slate-400 hover:text-slate-900 dark:hover:text-slate-200'
+                  }`}
+                >
+                  <span>{t('logModeRaw')}</span>
+                </button>
+              </div>
             </div>
 
-            <div className="bg-slate-950 text-slate-200 font-mono text-[11px] p-3.5 rounded-xl border border-slate-800 h-44 overflow-y-auto space-y-1 select-text">
+            {/* Adaptive Terminal Window (Light / Dark compliant) */}
+            <div className="bg-slate-50 dark:bg-[#090d16] text-slate-800 dark:text-slate-100 p-3.5 rounded-xl border border-slate-200 dark:border-slate-800 ring-1 ring-slate-200/80 dark:ring-slate-800/80 h-52 overflow-y-auto space-y-1.5 select-text shadow-inner">
               {displayLogs.length === 0 ? (
-                <div className="text-slate-500 italic py-4 text-center">
-                  กำลังรอรับข้อมูล Log จาก Email Harvester...
+                <div className="text-slate-500 dark:text-slate-400 italic py-6 text-center text-xs">
+                  {t('waitingForLogs')}
                 </div>
-              ) : (
+              ) : logViewMode === 'friendly' ? (
                 displayLogs.map((log, i) => {
-                  const isSuccess = log.includes('[+]') || log.includes('[✓]') || log.includes('COMPLETED');
-                  const isWarning = log.includes('[WARNING]') || log.includes('429');
-                  const isError = log.includes('[ERROR]') || log.includes('[✗]');
-
+                  const item = formatLiveLog(log, locale);
                   return (
                     <div
                       key={i}
-                      className={`leading-relaxed truncate ${
-                        isSuccess
-                          ? 'text-emerald-400'
-                          : isWarning
-                          ? 'text-amber-400'
-                          : isError
-                          ? 'text-rose-400'
-                          : 'text-slate-300'
-                      }`}
+                      className="flex items-start sm:items-center gap-2 py-0.5 text-xs border-b border-slate-200/80 dark:border-slate-900/60 last:border-b-0"
                     >
-                      {log}
+                      {item.timestamp && (
+                        <span className="text-[11px] text-slate-500 dark:text-slate-400 font-mono font-medium shrink-0 select-none pt-0.5 sm:pt-0">
+                          {item.timestamp}
+                        </span>
+                      )}
+                      {item.platform && (
+                        <span className={`px-2 py-0.5 rounded text-[11px] font-bold border shrink-0 ${getTerminalPlatformBadgeStyle(item.platform)}`}>
+                          {item.platform}
+                        </span>
+                      )}
+                      <span className={`px-2.5 py-0.5 rounded-md text-[11px] font-bold shrink-0 ${item.badgeClass}`}>
+                        {item.badgeText}
+                      </span>
+                      <span className="text-slate-800 dark:text-slate-100 font-medium text-xs leading-relaxed break-all flex-1 min-w-0">
+                        {item.message}
+                      </span>
                     </div>
                   );
                 })
+              ) : (
+                displayLogs.map((log, i) => (
+                  <React.Fragment key={i}>
+                    {renderRawLogLine(log)}
+                  </React.Fragment>
+                ))
               )}
               <div ref={logsEndRef} />
             </div>
@@ -342,13 +627,22 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
         {/* Footer Actions */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/60 dark:bg-slate-900/60">
           <div>
-            {isRunning && (
+            {isRunning ? (
               <button
                 type="button"
                 onClick={onClose}
                 className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 underline cursor-pointer"
               >
                 ย่อหน้าต่าง (ทำงานต่อในพื้นหลัง)
+              </button>
+            ) : (
+              <button
+                type="button"
+                onClick={() => setIsCacheManagerOpen(true)}
+                className="px-3 py-1.5 rounded-xl border border-amber-300 dark:border-amber-800/80 bg-amber-50/80 dark:bg-amber-950/30 text-amber-700 dark:text-amber-300 hover:bg-amber-100 text-xs font-semibold flex items-center gap-1.5 transition cursor-pointer shadow-2xs"
+              >
+                <RotateCw className="w-3.5 h-3.5" />
+                <span>ล้างประวัติเพื่อสแกนใหม่ (Reset / Resync)</span>
               </button>
             )}
           </div>
@@ -377,18 +671,41 @@ export const EmailSyncModal: React.FC<Props> = ({ isOpen, onClose, onComplete })
             )}
 
             {!isRunning && (
-              <button
-                type="button"
-                onClick={handleFinish}
-                className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
-              >
-                <span>{isCompleted ? 'เสร็จสิ้น & ดูพอร์ตการลงทุน' : 'ปิดหน้าต่าง'}</span>
-                {isCompleted && <ArrowRight className="w-3.5 h-3.5" />}
-              </button>
+              <div className="flex items-center gap-2">
+                <button
+                  type="button"
+                  onClick={onClose}
+                  className="px-3.5 py-2 rounded-xl text-xs font-semibold text-slate-600 dark:text-slate-400 hover:bg-slate-200 dark:hover:bg-slate-800 transition cursor-pointer"
+                >
+                  ไว้ตรวจสอบทีหลัง
+                </button>
+                <button
+                  type="button"
+                  onClick={() => handleFinish('ALL')}
+                  className="px-5 py-2 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white text-xs font-semibold shadow-sm transition flex items-center gap-1.5 cursor-pointer"
+                >
+                  <span>
+                    {isCompleted
+                      ? pendingItems.length > 0
+                        ? `ตรวจสอบและเลือกทุกรายการ (${pendingItems.length} รายการ)`
+                        : 'เสร็จสิ้น & ดูพอร์ตการลงทุน'
+                      : 'ปิดหน้าต่าง'}
+                  </span>
+                  {isCompleted && <ArrowRight className="w-3.5 h-3.5" />}
+                </button>
+              </div>
             )}
           </div>
         </div>
       </div>
+
+      <SyncCacheManagerModal
+        isOpen={isCacheManagerOpen}
+        onClose={() => setIsCacheManagerOpen(false)}
+        onResyncStarted={() => {
+          // Progress polling will automatically update
+        }}
+      />
     </div>
   );
 };

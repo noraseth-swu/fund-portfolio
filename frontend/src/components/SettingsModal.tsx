@@ -11,17 +11,26 @@ import {
   ExternalLink,
   Sparkles,
   Sliders,
+  RotateCw,
+  Building2,
+  RotateCcw,
 } from 'lucide-react';
 import {
   getUserSettings,
   updateUserSettings,
   testEmailConnection,
   startEmailSync,
+  getEmailBrokerConfigs,
+  updateEmailBrokerConfigs,
+  resetEmailBrokerConfigs,
   type UserSettings,
   type EmailSyncResult,
+  type EmailBrokerConfig,
 } from '../lib/api';
 import { EmailSyncModal } from './EmailSyncModal';
+import { SyncCacheManagerModal } from './SyncCacheManagerModal';
 import { useI18n } from '../lib/i18n';
+import { useToast } from '../lib/toast';
 
 interface SettingsModalProps {
   isOpen: boolean;
@@ -50,6 +59,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onSyncComplete,
 }) => {
   const { t } = useI18n();
+  const toast = useToast();
 
   const [settings, setSettings] = useState<UserSettings>({
     user_id: '',
@@ -70,8 +80,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [syncing, setSyncing] = useState(false);
   const [syncResult, setSyncResult] = useState<EmailSyncResult | null>(null);
   const [isSyncTrackerOpen, setIsSyncTrackerOpen] = useState(false);
+  const [isCacheManagerOpen, setIsCacheManagerOpen] = useState(false);
   const [showPassword, setShowPassword] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+  const [brokerConfigs, setBrokerConfigs] = useState<EmailBrokerConfig[]>([]);
+  const [resettingBrokers, setResettingBrokers] = useState(false);
 
   // Load user settings on modal open
   useEffect(() => {
@@ -95,6 +108,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           auto_sync_enabled: data.auto_sync_enabled ?? true,
           last_sync_at: data.last_sync_at,
         });
+
+        const brokers = await getEmailBrokerConfigs();
+        if (Array.isArray(brokers)) {
+          setBrokerConfigs(brokers);
+        }
       } catch (e: any) {
         console.error('Failed to load settings:', e);
       } finally {
@@ -129,11 +147,37 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     setStatusMessage(null);
     try {
       await updateUserSettings(settings);
-      setStatusMessage({ type: 'success', text: t('settingsSaved') });
+      if (brokerConfigs.length > 0) {
+        await updateEmailBrokerConfigs(brokerConfigs);
+      }
+      const msg = t('settingsSaved') || 'บันทึกการตั้งค่าเรียบร้อยแล้ว';
+      setStatusMessage({ type: 'success', text: msg });
+      toast.success(msg);
     } catch (e: any) {
-      setStatusMessage({ type: 'error', text: e.message || 'Failed to save settings' });
+      const err = e.message || 'Failed to save settings';
+      setStatusMessage({ type: 'error', text: err });
+      toast.error(err);
     } finally {
       setSaving(false);
+    }
+  };
+
+  const handleResetBrokers = async () => {
+    setResettingBrokers(true);
+    try {
+      const defaults = await resetEmailBrokerConfigs();
+      if (Array.isArray(defaults)) {
+        setBrokerConfigs(defaults);
+        const msg = 'รีเซ็ตการตั้งค่าสถาบันการเงินเป็นค่าเริ่มต้นแล้ว';
+        setStatusMessage({ type: 'success', text: msg });
+        toast.success(msg);
+      }
+    } catch (e: any) {
+      const err = e.message || 'ไม่สามารถรีเซ็ตการตั้งค่าได้';
+      setStatusMessage({ type: 'error', text: err });
+      toast.error(err);
+    } finally {
+      setResettingBrokers(false);
     }
   };
 
@@ -446,6 +490,107 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
           </div>
 
+          {/* Section 3: Master Broker Rules & Dynamic Extraction Configuration */}
+          <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex items-center justify-between">
+              <div className="flex items-center gap-2">
+                <Building2 className="w-4 h-4 text-sky-500" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  การตั้งค่าสถาบันการเงิน & กฎการสแกน (Master Broker Rules)
+                </h3>
+              </div>
+              <button
+                type="button"
+                onClick={handleResetBrokers}
+                disabled={resettingBrokers}
+                className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 font-medium transition cursor-pointer disabled:opacity-50"
+                title="คืนค่าการตั้งค่าสถาบันการเงินเป็นค่าเริ่มต้นทั้งหมด"
+              >
+                <RotateCcw className={`w-3 h-3 ${resettingBrokers ? 'animate-spin' : ''}`} />
+                <span>รีเซ็ตเป็นค่าเริ่มต้น</span>
+              </button>
+            </div>
+
+            <p className="text-[11px] text-slate-500 dark:text-slate-400">
+              เปิด/ปิดการสแกนเฉพาะสถาบันที่ใช้งาน หรือแก้ไขที่อยู่อีเมลผู้ส่ง (Sender Emails) เพื่อความแม่นยำสูงสุด
+            </p>
+
+            <div className="space-y-3">
+              {brokerConfigs.map((b, idx) => (
+                <div
+                  key={b.key}
+                  className={`p-3.5 rounded-xl border transition ${
+                    b.enabled
+                      ? 'bg-white dark:bg-slate-900 border-slate-200 dark:border-slate-700/80 shadow-sm'
+                      : 'bg-slate-100/70 dark:bg-slate-900/40 border-dashed border-slate-300 dark:border-slate-800 opacity-60'
+                  }`}
+                >
+                  <div className="flex flex-wrap items-center justify-between gap-2 mb-2">
+                    <div className="flex items-center gap-2.5">
+                      <label className="relative inline-flex items-center cursor-pointer">
+                        <input
+                          type="checkbox"
+                          checked={b.enabled}
+                          onChange={(e) => {
+                            const updated = [...brokerConfigs];
+                            updated[idx] = { ...b, enabled: e.target.checked };
+                            setBrokerConfigs(updated);
+                          }}
+                          className="sr-only peer"
+                        />
+                        <div className="w-8 h-4 bg-slate-300 peer-focus:outline-none rounded-full peer dark:bg-slate-700 peer-checked:after:translate-x-full peer-checked:after:border-white after:content-[''] after:absolute after:top-[2px] after:left-[2px] after:bg-white after:border-slate-300 after:border after:rounded-full after:h-3 after:w-3 after:transition-all peer-checked:bg-indigo-600"></div>
+                      </label>
+                      <span className="font-semibold text-xs text-slate-900 dark:text-white">
+                        {b.name}
+                      </span>
+                      <span className="text-[10px] font-mono px-1.5 py-0.5 rounded bg-slate-200 dark:bg-slate-800 text-slate-700 dark:text-slate-300 font-bold">
+                        {b.key}
+                      </span>
+                    </div>
+                    <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60">
+                      {b.extraction_type === 'PDF_ATTACHMENT' && '📄 แนบไฟล์ PDF'}
+                      {b.extraction_type === 'HTML_BODY_TABLE' && '📧 ตารางในเนื้อหาเมล'}
+                      {b.extraction_type === 'PDF_POSITION_SNAPSHOT' && '📊 สรุปพอร์ตยอดสะสม'}
+                      {!['PDF_ATTACHMENT', 'HTML_BODY_TABLE', 'PDF_POSITION_SNAPSHOT'].includes(b.extraction_type) && b.extraction_type}
+                    </span>
+                  </div>
+
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mt-2">
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                        อีเมลผู้ส่ง (Sender Emails คั่นด้วยจุลภาค)
+                      </label>
+                      <input
+                        type="text"
+                        value={b.sender_emails.join(', ')}
+                        disabled={!b.enabled}
+                        onChange={(e) => {
+                          const emails = e.target.value.split(',').map((s) => s.trim()).filter(Boolean);
+                          const updated = [...brokerConfigs];
+                          updated[idx] = { ...b, sender_emails: emails };
+                          setBrokerConfigs(updated);
+                        }}
+                        className="w-full px-2.5 py-1.5 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white font-mono focus:ring-1 focus:ring-indigo-500 disabled:opacity-50"
+                        placeholder="example@bank.com"
+                      />
+                    </div>
+
+                    <div>
+                      <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
+                        รูปแบบรหัสผ่านที่ระบบใช้ (Password Patterns)
+                      </label>
+                      <div className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-[11px] font-mono text-slate-600 dark:text-slate-400 truncate">
+                        {b.password_patterns.length > 0
+                          ? b.password_patterns.join(' | ')
+                          : 'ไม่ต้องใช้รหัสผ่าน (No Password)'}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+            </div>
+          </div>
+
           {/* Section 3: Live Sync Summary if executed */}
           {syncResult && (
             <div className="p-4 rounded-xl bg-slate-900 border border-indigo-500/30 text-white space-y-2">
@@ -509,13 +654,24 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
         {/* Footer Actions */}
         <div className="flex items-center justify-between px-6 py-4 border-t border-slate-200 dark:border-slate-800 bg-slate-50/50 dark:bg-slate-900/50">
-          <button
-            type="button"
-            onClick={onClose}
-            className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
-          >
-            {t('btnCancel')}
-          </button>
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              onClick={onClose}
+              className="px-4 py-2 rounded-xl border border-slate-300 dark:border-slate-700 text-xs font-semibold text-slate-700 dark:text-slate-300 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+            >
+              {t('btnCancel')}
+            </button>
+            <button
+              type="button"
+              onClick={() => setIsCacheManagerOpen(true)}
+              className="px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
+              title="จัดการแคชอีเมลและล้างประวัติเพื่อสแกนใหม่"
+            >
+              <RotateCw className="w-3.5 h-3.5" />
+              <span>จัดการแคช / สแกนใหม่</span>
+            </button>
+          </div>
 
           <div className="flex items-center gap-3">
             <button
@@ -546,6 +702,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         onClose={() => setIsSyncTrackerOpen(false)}
         onComplete={() => {
           if (onSyncComplete) onSyncComplete();
+        }}
+      />
+
+      {/* Sync Cache & Resync Manager Popup */}
+      <SyncCacheManagerModal
+        isOpen={isCacheManagerOpen}
+        onClose={() => setIsCacheManagerOpen(false)}
+        onResyncStarted={() => {
+          setIsSyncTrackerOpen(true);
         }}
       />
     </div>

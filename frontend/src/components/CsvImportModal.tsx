@@ -11,7 +11,7 @@ import {
   ClipboardPaste,
   Activity,
 } from 'lucide-react';
-import { createTransactionsBatch, parseStatementAi, type TokenUsage } from '../lib/api';
+import { createPendingTransactionsBatch, parseStatementAi, type TokenUsage } from '../lib/api';
 import { extractTextFromPdf, arrayBufferToBase64 } from '../lib/pdfParser';
 import { useI18n } from '../lib/i18n';
 import { type ParsedRow, getRowAmount } from './import/types';
@@ -317,9 +317,9 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
       const payloads = validRows.map((r) => {
         const amt = getRowAmount(r);
         return {
-          proj_id: r.fundCode,
-          fund_abbr: r.fundCode,
           platform: r.platform,
+          raw_fund_name: r.fundCode,
+          fund_abbr: r.fundCode,
           trans_type: r.type,
           trans_date: r.date,
           units: r.units,
@@ -327,11 +327,13 @@ export const CsvImportModal: React.FC<Props> = ({ isOpen, onClose, onSuccess }) 
           total_amount: amt.toFixed(2),
           fee: r.fee,
           note: r.note,
+          sync_batch_id: 'universal_import',
+          source_file: fileName || 'STATEMENT_IMPORT',
         };
       });
 
-      const res = await createTransactionsBatch(payloads);
-      onSuccess(res);
+      const res = await createPendingTransactionsBatch(payloads);
+      onSuccess({ inserted_count: res.inserted_count, skipped_count: 0 });
       onClose();
     } catch (err: any) {
       setErrorMessage(err.message || t('saveError'));
