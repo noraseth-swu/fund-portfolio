@@ -26,6 +26,21 @@ vi.mock('../lib/api', () => ({
     transactions_skipped: 0,
     details: [],
   }),
+  getEmailBrokerConfigs: vi.fn().mockResolvedValue([
+    {
+      key: 'TTB',
+      name: 'ttb smart port',
+      enabled: true,
+      sender_emails: ['estatement@eservice.ttbbank.com'],
+      subject_includes: ['confirmation note'],
+      subject_excludes: [],
+      extraction_type: 'PDF_ATTACHMENT',
+      password_patterns: ['{DD}{MMM_EN}{YYYY_CE}'],
+      ai_prompt_variant: 'MUTUAL_FUND_THAI',
+    },
+  ]),
+  updateEmailBrokerConfigs: vi.fn().mockResolvedValue([]),
+  resetEmailBrokerConfigs: vi.fn().mockResolvedValue([]),
 }));
 
 describe('SettingsModal', () => {
@@ -46,7 +61,7 @@ describe('SettingsModal', () => {
     );
 
     expect(screen.getByText(/ตั้งค่าระบบ & Gmail Auto-Sync|System Settings/i)).toBeInTheDocument();
-    expect(await screen.findByText(/ttb Smart Port/i)).toBeInTheDocument();
+    expect((await screen.findAllByText(/ttb Smart Port/i)).length).toBeGreaterThanOrEqual(1);
     expect(screen.getByText(/Dime!/i)).toBeInTheDocument();
     expect(screen.getByText(/SCB EASY/i)).toBeInTheDocument();
     expect(screen.getByText(/KASSET PVD/i)).toBeInTheDocument();
