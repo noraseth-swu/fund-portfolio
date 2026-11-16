@@ -12,16 +12,24 @@ import {
   RefreshCw,
   AlertTriangle,
   X,
-  FileSpreadsheet
+  FileSpreadsheet,
+  Edit2,
+  Calculator,
+  TrendingUp,
+  TrendingDown,
+  Plus
 } from 'lucide-react';
 import { getTransactions, deleteTransaction, bulkDeleteTransactions, type Transaction } from '../lib/api';
 import { PlatformBadge } from './PlatformBadge';
 import { useI18n } from '../lib/i18n';
+import { useToast } from '../lib/toast';
+import { TransactionModal } from './TransactionModal';
 
 interface Props {
   initialFundFilter?: string | null;
   onBack: () => void;
   onDataChanged: () => void;
+  refreshTrigger?: number;
 }
 
 type SortField = 'trans_date' | 'fund_abbr' | 'platform' | 'trans_type' | 'units' | 'unit_price' | 'total_amount' | 'fee';
@@ -31,8 +39,10 @@ export const TransactionHistoryPage: React.FC<Props> = ({
   initialFundFilter,
   onBack,
   onDataChanged,
+  refreshTrigger,
 }) => {
   const { t, locale } = useI18n();
+  const toast = useToast();
   const [transactions, setTransactions] = useState<Transaction[]>([]);
   const [loading, setLoading] = useState(false);
   const [searchQuery, setSearchQuery] = useState(initialFundFilter || '');
@@ -41,7 +51,9 @@ export const TransactionHistoryPage: React.FC<Props> = ({
   const [selectedIds, setSelectedIds] = useState<Set<string>>(new Set());
   const [isDeletingBulk, setIsDeletingBulk] = useState(false);
   const [deletingSingleId, setDeletingSingleId] = useState<string | null>(null);
+  const [singleDeleteTarget, setSingleDeleteTarget] = useState<Transaction | null>(null);
   const [showConfirmModal, setShowConfirmModal] = useState(false);
+  const [isAddModalOpen, setIsAddModalOpen] = useState(false);
   const [statusMessage, setStatusMessage] = useState<string | null>(null);
 
   // Sorting
@@ -62,7 +74,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
 
   useEffect(() => {
     loadData();
-  }, []);
+  }, [refreshTrigger]);
 
   const handleSort = (field: SortField) => {
     if (sortField === field) {
@@ -141,6 +153,47 @@ export const TransactionHistoryPage: React.FC<Props> = ({
     });
   }, [transactions, selectedPlatform, selectedType, searchQuery, sortField, sortOrder]);
 
+  // Edit Modal State
+  const [editingTransaction, setEditingTransaction] = useState<Transaction | null>(null);
+  const [isEditModalOpen, setIsEditModalOpen] = useState(false);
+
+  const handleOpenEditModal = (tx: Transaction) => {
+    setEditingTransaction(tx);
+    setIsEditModalOpen(true);
+  };
+
+  // Real-Time Grand Total calculations from filteredTransactions
+  const grandTotalStats = useMemo(() => {
+    const totalCount = filteredTransactions.length;
+    let totalBuy = 0;
+    let totalSell = 0;
+    let totalDividend = 0;
+    let totalFee = 0;
+
+    for (const it of filteredTransactions) {
+      const amt = parseFloat(it.total_amount) || 0;
+      const f = parseFloat(it.fee) || 0;
+      totalFee += f;
+      if (it.trans_type === 'BUY') {
+        totalBuy += amt;
+      } else if (it.trans_type === 'SELL') {
+        totalSell += amt;
+      } else if (it.trans_type === 'DIVIDEND' || it.trans_type === 'DIV') {
+        totalDividend += amt;
+      }
+    }
+
+    const netInvested = totalBuy - totalSell;
+    return {
+      totalCount,
+      totalBuy,
+      totalSell,
+      totalDividend,
+      totalFee,
+      netInvested,
+    };
+  }, [filteredTransactions]);
+
   // Checkbox Selection
   const allFilteredSelected =
     filteredTransactions.length > 0 &&
@@ -175,23 +228,24 @@ export const TransactionHistoryPage: React.FC<Props> = ({
     try {
       const idsArray = Array.from(selectedIds);
       const res = await bulkDeleteTransactions(idsArray);
-      setStatusMessage(t('bulkDeleteSuccess', { n: res.deleted_count }));
+      const msg = t('bulkDeleteSuccess', { n: res.deleted_count }) || (locale === 'th' ? `ลบรายการธุรกรรม ${res.deleted_count} รายการเรียบร้อยแล้ว` : `Successfully deleted ${res.deleted_count} transactions`);
+      toast.success(msg);
       setSelectedIds(new Set());
       setShowConfirmModal(false);
       await loadData();
       onDataChanged();
-      setTimeout(() => setStatusMessage(null), 4000);
-    } catch (e) {
+    } catch (e: any) {
       console.error(e);
-      alert(t('bulkDeleteFailed'));
+      toast.error(e?.message || (locale === 'th' ? 'เกิดข้อผิดพลาดในการลบรายการ' : 'Failed to delete transactions'));
     } finally {
       setIsDeletingBulk(false);
     }
   };
 
-  // Single Delete
-  const handleSingleDelete = async (id: string) => {
-    if (!confirm(t('confirmDelete'))) return;
+  // Single Delete Confirmation
+  const confirmSingleDelete = async () => {
+    if (!singleDeleteTarget) return;
+    const id = singleDeleteTarget.id;
     setDeletingSingleId(id);
     try {
       await deleteTransaction(id);
@@ -200,11 +254,13 @@ export const TransactionHistoryPage: React.FC<Props> = ({
         next.delete(id);
         return next;
       });
+      setSingleDeleteTarget(null);
       await loadData();
       onDataChanged();
-    } catch (e) {
+      toast.success(locale === 'th' ? 'ลบรายการธุรกรรมเรียบร้อยแล้ว' : 'Transaction deleted successfully');
+    } catch (e: any) {
       console.error(e);
-      alert(t('deleteFailed'));
+      toast.error(e?.message || (locale === 'th' ? 'เกิดข้อผิดพลาดในการลบรายการ' : 'Failed to delete transaction'));
     } finally {
       setDeletingSingleId(null);
     }
@@ -257,6 +313,14 @@ export const TransactionHistoryPage: React.FC<Props> = ({
         </div>
 
         <div className="flex items-center gap-2">
+          <button
+            onClick={() => setIsAddModalOpen(true)}
+            className="px-3.5 py-2.5 rounded-xl bg-indigo-600 hover:bg-indigo-500 text-white transition cursor-pointer flex items-center gap-1.5 text-sm font-semibold shadow-xs"
+            title={t('addTransaction')}
+          >
+            <Plus className="w-4 h-4 text-white" />
+            <span className="hidden sm:inline">{t('addTransaction')}</span>
+          </button>
           <button
             onClick={loadData}
             disabled={loading}
@@ -523,6 +587,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                   const isSelected = selectedIds.has(item.id);
                   const isBuy = item.trans_type.toUpperCase() === 'BUY';
                   const isSell = item.trans_type.toUpperCase() === 'SELL';
+                  const isStock = item.id.startsWith('tx_stk_') || (item.platform?.toUpperCase() === 'DIME' && !item.proj_id?.startsWith('M'));
 
                   return (
                     <tr
@@ -547,9 +612,22 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                         {item.trans_date}
                       </td>
                       <td className="py-3.5 px-4">
-                        <span className="font-bold text-slate-900 dark:text-white block font-mono">
-                          {item.fund_abbr || item.proj_id}
-                        </span>
+                        <div className="flex items-center gap-1.5 flex-wrap">
+                          <button
+                            type="button"
+                            onClick={() => handleOpenEditModal(item)}
+                            className="font-bold text-indigo-600 dark:text-indigo-400 hover:text-indigo-800 dark:hover:text-indigo-300 hover:underline font-mono text-left cursor-pointer transition flex items-center gap-1.5 group"
+                            title={locale === 'th' ? 'กดเพื่อแก้ไขรายละเอียดรายการ' : 'Click to edit transaction'}
+                          >
+                            <span>{item.fund_abbr || item.proj_id}</span>
+                            <Edit2 className="w-3.5 h-3.5 opacity-50 group-hover:opacity-100 transition-opacity text-slate-400 group-hover:text-indigo-500" />
+                          </button>
+                          {isStock && (
+                            <span className="text-[9px] px-1.5 py-0.5 rounded font-semibold bg-amber-100 text-amber-800 dark:bg-amber-900/40 dark:text-amber-300 border border-amber-200 dark:border-amber-800/50">
+                              Stock
+                            </span>
+                          )}
+                        </div>
                         {item.note && (
                           <span className="text-[10px] text-slate-400 dark:text-slate-500 block truncate max-w-xs" title={item.note}>
                             {item.note}
@@ -576,17 +654,18 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                         {parseFloat(item.units).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {parseFloat(item.unit_price).toFixed(4)}
+                        {isStock ? `$${parseFloat(item.unit_price).toFixed(2)}` : parseFloat(item.unit_price).toFixed(4)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
                         {parseFloat(item.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                        {isStock && <span className="text-[10px] text-slate-400 font-normal ml-1">THB</span>}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-slate-500 text-xs hidden md:table-cell">
                         {parseFloat(item.fee) > 0 ? parseFloat(item.fee).toFixed(2) : '-'}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <button
-                          onClick={() => handleSingleDelete(item.id)}
+                          onClick={() => setSingleDeleteTarget(item)}
                           disabled={deletingSingleId === item.id}
                           className="text-slate-400 hover:text-rose-600 dark:hover:text-rose-400 p-1.5 rounded-lg hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
                           title={t('actionDelete')}
@@ -603,9 +682,203 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                 })
               )}
             </tbody>
+            {filteredTransactions.length > 0 && (
+              <tfoot className="bg-slate-100/90 dark:bg-slate-800/90 border-t-2 border-slate-300 dark:border-slate-700 font-bold text-xs sticky bottom-0 z-10 backdrop-blur-xs">
+                <tr>
+                  <td colSpan={5} className="py-3 px-4 text-slate-800 dark:text-slate-100">
+                    <div className="flex items-center gap-2">
+                      <Calculator className="w-4 h-4 text-indigo-500" />
+                      <span>{locale === 'th' ? `รวมจากรายการที่แสดง (${grandTotalStats.totalCount} รายการ)` : `Total from displayed rows (${grandTotalStats.totalCount} items)`}</span>
+                    </div>
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-500 dark:text-slate-400">-</td>
+                  <td className="py-3 px-4 text-right font-mono text-slate-500 dark:text-slate-400">-</td>
+                  <td className="py-3 px-4 text-right font-mono text-sm text-slate-900 dark:text-white">
+                    ฿{grandTotalStats.netInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-3 px-4 text-right font-mono text-xs text-slate-600 dark:text-slate-300 hidden md:table-cell">
+                    ฿{grandTotalStats.totalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                  </td>
+                  <td className="py-3 px-4"></td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       </div>
+
+      {/* Real-Time Grand Total Summary Bar */}
+      {filteredTransactions.length > 0 && (
+        <div className="bg-white dark:bg-slate-900/90 border border-slate-200 dark:border-slate-800 rounded-2xl p-4 sm:p-5 shadow-sm mt-4">
+          <div className="flex items-center justify-between mb-3 border-b border-slate-100 dark:border-slate-800/80 pb-2.5">
+            <div className="flex items-center gap-2">
+              <Calculator className="w-4 h-4 text-indigo-500" />
+              <h3 className="text-sm font-bold text-slate-900 dark:text-white">
+                {locale === 'th' ? 'สรุปยอดรวมคำนวณแบบ Real-Time (Grand Total)' : 'Real-Time Summary (Grand Total)'}
+              </h3>
+            </div>
+            <span className="text-xs text-slate-500 dark:text-slate-400">
+              {locale === 'th' ? `คำนวณจาก ${grandTotalStats.totalCount} รายการที่กรองอยู่` : `Calculated from ${grandTotalStats.totalCount} filtered rows`}
+            </span>
+          </div>
+
+          <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-5 gap-3">
+            {/* Total Items */}
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                {locale === 'th' ? 'จำนวนรายการ' : 'Total Records'}
+              </div>
+              <div className="text-lg font-bold font-mono text-slate-900 dark:text-white">
+                {grandTotalStats.totalCount.toLocaleString()} <span className="text-xs font-normal text-slate-500">{locale === 'th' ? 'รายการ' : 'items'}</span>
+              </div>
+            </div>
+
+            {/* Total Buy */}
+            <div className="p-3 rounded-xl bg-emerald-50/70 dark:bg-emerald-950/30 border border-emerald-200 dark:border-emerald-800/50">
+              <div className="text-[11px] text-emerald-700 dark:text-emerald-400 mb-1 flex items-center gap-1">
+                <TrendingUp className="w-3 h-3" />
+                <span>{locale === 'th' ? 'ยอดซื้อรวม' : 'Total Buy'}</span>
+              </div>
+              <div className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400">
+                ฿{grandTotalStats.totalBuy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            {/* Total Sell */}
+            <div className="p-3 rounded-xl bg-amber-50/70 dark:bg-amber-950/30 border border-amber-200 dark:border-amber-800/50">
+              <div className="text-[11px] text-amber-700 dark:text-amber-400 mb-1 flex items-center gap-1">
+                <TrendingDown className="w-3 h-3" />
+                <span>{locale === 'th' ? 'ยอดขายรวม' : 'Total Sell'}</span>
+              </div>
+              <div className="text-lg font-bold font-mono text-amber-700 dark:text-amber-400">
+                ฿{grandTotalStats.totalSell.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            {/* Net Amount */}
+            <div className="p-3 rounded-xl bg-indigo-50/70 dark:bg-indigo-950/30 border border-indigo-200 dark:border-indigo-800/50">
+              <div className="text-[11px] text-indigo-700 dark:text-indigo-400 mb-1">
+                {locale === 'th' ? 'ยอดเงินลงทุนสุทธิ' : 'Net Invested'}
+              </div>
+              <div className="text-lg font-bold font-mono text-indigo-700 dark:text-indigo-400">
+                ฿{grandTotalStats.netInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+
+            {/* Total Fee */}
+            <div className="p-3 rounded-xl bg-slate-50 dark:bg-slate-800/50 border border-slate-200 dark:border-slate-700/60 col-span-2 sm:col-span-1">
+              <div className="text-[11px] text-slate-500 dark:text-slate-400 mb-1">
+                {locale === 'th' ? 'ค่าธรรมเนียมรวม' : 'Total Fees'}
+              </div>
+              <div className="text-lg font-bold font-mono text-slate-700 dark:text-slate-300">
+                ฿{grandTotalStats.totalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+              </div>
+            </div>
+          </div>
+        </div>
+      )}
+
+      {/* Create Transaction Modal directly from History Page */}
+      {isAddModalOpen && (
+        <TransactionModal
+          isOpen={isAddModalOpen}
+          onClose={() => setIsAddModalOpen(false)}
+          onSuccess={(payload?: any) => {
+            loadData();
+            onDataChanged();
+            const msg = payload?.message || (locale === 'th' ? 'บันทึกรายการธุรกรรมเรียบร้อยแล้ว' : 'Transaction recorded successfully');
+            toast.success(msg);
+          }}
+        />
+      )}
+
+      {/* Edit Transaction Modal */}
+      {isEditModalOpen && (
+        <TransactionModal
+          isOpen={isEditModalOpen}
+          onClose={() => {
+            setIsEditModalOpen(false);
+            setEditingTransaction(null);
+          }}
+          onSuccess={(payload?: any) => {
+            loadData();
+            onDataChanged();
+            const msg = payload?.message || (locale === 'th' ? 'อัพเดตรายการธุรกรรมเรียบร้อยแล้ว' : 'Transaction updated successfully');
+            toast.success(msg);
+          }}
+          editTransaction={editingTransaction}
+        />
+      )}
+
+      {/* Confirmation Modal for Single Delete */}
+      {singleDeleteTarget && (
+        <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-black/70 backdrop-blur-xs animate-fade-in">
+          <div className="bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-800 rounded-2xl w-full max-w-md p-6 shadow-2xl relative">
+            <div className="flex items-start gap-3">
+              <div className="p-3 rounded-xl bg-rose-100 dark:bg-rose-950/80 text-rose-600 dark:text-rose-400 shrink-0">
+                <AlertTriangle className="w-6 h-6" />
+              </div>
+              <div className="flex-1 min-w-0">
+                <h3 className="text-lg font-bold text-slate-900 dark:text-white">
+                  {locale === 'th' ? 'ยืนยันการลบรายการธุรกรรม' : 'Confirm Transaction Deletion'}
+                </h3>
+                <p className="text-sm text-slate-500 dark:text-slate-400 mt-2">
+                  {locale === 'th'
+                    ? 'คุณต้องการลบรายการธุรกรรมนี้ออกจากระบบใช่หรือไม่? การกระทำนี้ไม่สามารถย้อนกลับได้'
+                    : 'Are you sure you want to delete this transaction? This action cannot be undone.'}
+                </p>
+                <div className="mt-3 p-3 rounded-xl bg-slate-50 dark:bg-slate-800 border border-slate-200 dark:border-slate-700 text-xs text-slate-600 dark:text-slate-300 space-y-1.5">
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">{locale === 'th' ? 'กองทุน:' : 'Fund:'}</span>
+                    <span className="font-bold text-slate-900 dark:text-white">{singleDeleteTarget.fund_abbr || singleDeleteTarget.proj_id}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">{locale === 'th' ? 'วันที่:' : 'Date:'}</span>
+                    <span className="font-mono text-slate-900 dark:text-white">{singleDeleteTarget.trans_date}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">{locale === 'th' ? 'จำนวนหน่วย:' : 'Units:'}</span>
+                    <span className="font-mono text-slate-900 dark:text-white">{parseFloat(singleDeleteTarget.units).toFixed(4)}</span>
+                  </div>
+                  <div className="flex justify-between">
+                    <span className="text-slate-400">{locale === 'th' ? 'มูลค่ารวม:' : 'Total Amount:'}</span>
+                    <span className="font-mono font-bold text-slate-900 dark:text-white">{parseFloat(singleDeleteTarget.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2 })} THB</span>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div className="flex items-center justify-end gap-3 mt-6">
+              <button
+                type="button"
+                onClick={() => setSingleDeleteTarget(null)}
+                disabled={Boolean(deletingSingleId)}
+                className="px-4 py-2 rounded-xl text-sm font-medium text-slate-600 dark:text-slate-400 hover:bg-slate-100 dark:hover:bg-slate-800 transition cursor-pointer"
+              >
+                {t('btnCancel')}
+              </button>
+              <button
+                type="button"
+                onClick={confirmSingleDelete}
+                disabled={Boolean(deletingSingleId)}
+                className="px-5 py-2 rounded-xl text-sm font-bold bg-rose-600 hover:bg-rose-500 text-white shadow-md transition cursor-pointer flex items-center gap-1.5 disabled:opacity-50"
+              >
+                {deletingSingleId ? (
+                  <>
+                    <RefreshCw className="w-4 h-4 animate-spin" />
+                    <span>{locale === 'th' ? 'กำลังลบ...' : 'Deleting...'}</span>
+                  </>
+                ) : (
+                  <>
+                    <Trash2 className="w-4 h-4" />
+                    <span>{t('actionDelete')}</span>
+                  </>
+                )}
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
       {/* Confirmation Modal for Bulk Delete */}
       {showConfirmModal && (
