@@ -1,8 +1,46 @@
+# Dependencies
+node_modules/
 target/
+
+# Environment variables & secrets
 .env
+.env.*
+!.env.example
+backend/.env
+backend/.env.*
+!backend/.env.example
+
+# Databases & Backups
 *.db
 *.db-shm
 *.db-wal
-node_modules/
+*.backup*
+portfolio.db*
+backend/portfolio.db*
+
+# Runtime logs & cache files
+*.log
+backend/*.log
+backend/email_sync.log
+sync_progress.*
+backend/sync_progress.*
+
+# Python caches
+__pycache__/
+*.pyc
+*.pyo
+*.pyd
+.pytest_cache/
+backend/scripts/__pycache__/
+
+# Build & bundle outputs
 dist/
+build/
+.coverage
+htmlcov/
+
+# Temporary and local scratch files
+scratch/
+.agents/
 .DS_Store
+Thumbs.db

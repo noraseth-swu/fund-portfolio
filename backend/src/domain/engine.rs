@@ -19,8 +19,17 @@ impl CalculationEngine {
         mut transactions: Vec<Transaction>,
         nav_map: &NavMap,
     ) -> PortfolioSummary {
-        // เรียงลำดับธุรกรรมตามวันที่ (เก่าไปใหม่) เพื่อให้การคำนวณ Cost Basis ถูกต้อง
-        transactions.sort_by(|a, b| a.trans_date.cmp(&b.trans_date));
+        // เรียงลำดับธุรกรรมตามวันที่ (เก่าไปใหม่) และในวันเดียวกันให้คำนวณ BUY ก่อน DIVIDEND ก่อน SELL
+        transactions.sort_by(|a, b| {
+            a.trans_date.cmp(&b.trans_date).then_with(|| {
+                let type_precedence = |t: &TransactionType| match t {
+                    TransactionType::Buy => 0,
+                    TransactionType::Dividend => 1,
+                    TransactionType::Sell => 2,
+                };
+                type_precedence(&a.trans_type).cmp(&type_precedence(&b.trans_type))
+            })
+        });
 
         // Key: (proj_id, platform_str)
         struct PositionTracker {
@@ -35,24 +44,30 @@ impl CalculationEngine {
             last_unit_price: Decimal,
         }
 
-        let mut trackers: HashMap<(String, String), PositionTracker> = HashMap::new();
+        let mut trackers: HashMap<(String, String, String), PositionTracker> = HashMap::new();
 
         for tx in transactions {
             let platform_str = tx.platform.as_str().to_string();
-            let key = (tx.proj_id.clone(), platform_str.clone());
+            let effective_abbr = tx.fund_abbr.clone().unwrap_or_else(|| tx.proj_id.clone());
+            let key = (tx.proj_id.clone(), effective_abbr.clone(), platform_str.clone());
 
-            let (abbr, name_th, _, _) = nav_map.get(&tx.proj_id).cloned().unwrap_or_else(|| {
-                (
-                    tx.fund_abbr.clone().unwrap_or_else(|| tx.proj_id.clone()),
-                    None,
-                    Decimal::ZERO,
-                    None,
-                )
-            });
+            let class_key = format!("{}:{}", tx.proj_id, effective_abbr);
+            let (_abbr, name_th, _, _) = nav_map
+                .get(&class_key)
+                .or_else(|| nav_map.get(&tx.proj_id))
+                .cloned()
+                .unwrap_or_else(|| {
+                    (
+                        effective_abbr.clone(),
+                        None,
+                        Decimal::ZERO,
+                        None,
+                    )
+                });
 
             let tracker = trackers.entry(key).or_insert_with(|| PositionTracker {
                 proj_id: tx.proj_id.clone(),
-                fund_abbr: abbr,
+                fund_abbr: effective_abbr,
                 fund_name_th: name_th,
                 platform: platform_str,
                 units: Decimal::ZERO,
@@ -69,8 +84,9 @@ impl CalculationEngine {
             match tx.trans_type {
                 TransactionType::Buy => {
                     // ป้องกันค่า units หรือ amount ที่ส่งมาติดลบ
+                    // total_amount คือยอดเงินลงทุนทั้งหมด (เช่น 1,000 บาท) ตามที่แอปสถาบันการเงิน (SCB, KBANK) คำนวณเป็น Cost Basis
                     let buy_units = tx.units.abs();
-                    let buy_cost = tx.total_amount.abs() + tx.fee.abs();
+                    let buy_cost = tx.total_amount.abs();
                     tracker.units += buy_units;
                     tracker.total_cost += buy_cost;
                 }
@@ -110,8 +126,10 @@ impl CalculationEngine {
         let mut platform_groups: HashMap<String, (Decimal, Decimal, Decimal)> = HashMap::new(); // (cost, market_val, realized)
 
         for (_, mut tracker) in trackers {
+            let class_key = format!("{}:{}", tracker.proj_id, tracker.fund_abbr);
             let (mut current_nav, nav_date) = nav_map
-                .get(&tracker.proj_id)
+                .get(&class_key)
+                .or_else(|| nav_map.get(&tracker.proj_id))
                 .map(|(_, _, nav, date)| (*nav, date.clone()))
                 .unwrap_or((Decimal::ZERO, None));
 
@@ -179,9 +197,7 @@ impl CalculationEngine {
                     || (!tracker.proj_id.starts_with('M')
                         && tracker.platform == "DIME"
                         && tracker.fund_abbr.len() <= 5
-                        && tracker.fund_abbr.chars().all(|c| c.is_ascii_alphabetic()))
-                    || (tracker.platform == "DIME"
-                        && (tracker.fund_abbr == "K-USA(UH)" || tracker.fund_abbr == "M-MINVOL"));
+                        && tracker.fund_abbr.chars().all(|c| c.is_ascii_alphabetic()));
                 let asset_type = if is_stock {
                     "STOCK".to_string()
                 } else {
@@ -210,6 +226,10 @@ impl CalculationEngine {
                     unrealized_pl_pct,
                     realized_pl: tracker.realized_pl.round_dp(2),
                     total_dividend: tracker.dividend.round_dp(2),
+                    currency: None,
+                    price_foreign: None,
+                    avg_cost_foreign: None,
+                    exchange_rate: None,
                 });
             }
         }
@@ -448,5 +468,104 @@ mod tests {
             Some("023362010997256"),
         );
         assert_ne!(key1, key3);
+    }
+
+    #[test]
+    fn test_multiple_share_classes_distinct_tracking() {
+        // ทดสอบว่าคลาส E (SCBS&P500E) และคลาสหลัก (SCBS&P500FUND) ที่อยู่ภายใต้ proj_id เดียวกัน (M0643_2555)
+        // จะถูกแยกเป็น 2 ตำแหน่งการถือครองอย่างถูกต้อง ไม่ถูกรวมชื่อหรือทับกัน
+        let tx_class_e = Transaction {
+            id: "tx-e".to_string(),
+            idempotency_key: None,
+            proj_id: "M0643_2555".to_string(),
+            fund_abbr: Some("SCBS&P500E".to_string()),
+            platform: super::super::models::Platform::Scb,
+            trans_type: TransactionType::Buy,
+            trans_date: "2026-10-28".to_string(),
+            units: dec!(22.3608),
+            unit_price: dec!(44.7211),
+            total_amount: dec!(1000.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        let tx_class_main = Transaction {
+            id: "tx-main".to_string(),
+            idempotency_key: None,
+            proj_id: "M0643_2555".to_string(),
+            fund_abbr: Some("SCBS&P500FUND".to_string()),
+            platform: super::super::models::Platform::Scb,
+            trans_type: TransactionType::Buy,
+            trans_date: "2026-10-20".to_string(),
+            units: dec!(22.5000),
+            unit_price: dec!(44.4444),
+            total_amount: dec!(1000.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        let mut nav_map = HashMap::new();
+        // Class-specific NAV
+        nav_map.insert("M0643_2555:SCBS&P500E".to_string(), ("SCBS&P500E".to_string(), Some("กองทุนเปิดไทยพาณิชย์หุ้นยูเอส".to_string()), dec!(45.0), Some("2026-11-10".to_string())));
+        // Fallback parent NAV
+        nav_map.insert("M0643_2555".to_string(), ("SCBS&P500FUND".to_string(), Some("กองทุนเปิดไทยพาณิชย์หุ้นยูเอส".to_string()), dec!(44.0), Some("2026-11-10".to_string())));
+
+        let summary = CalculationEngine::calculate_portfolio(vec![tx_class_e, tx_class_main], &nav_map);
+
+        assert_eq!(summary.holdings.len(), 2, "Should have 2 distinct holdings for 2 share classes");
+        
+        let e_holding = summary.holdings.iter().find(|h| h.fund_abbr == "SCBS&P500E").expect("SCBS&P500E holding exists");
+        assert_eq!(e_holding.platform, "SCB");
+        assert_eq!(e_holding.current_nav, dec!(45.0));
+
+        let main_holding = summary.holdings.iter().find(|h| h.fund_abbr == "SCBS&P500FUND").expect("SCBS&P500FUND holding exists");
+        assert_eq!(main_holding.platform, "SCB");
+        assert_eq!(main_holding.current_nav, dec!(44.0));
+    }
+
+    #[test]
+    fn test_same_day_buy_before_sell_and_fund_asset_type() {
+        // ทดสอบว่าถ้ามีรายการ SELL อยู่ก่อน BUY ในวันเดียวกัน เครื่องคิดคำนวณจะจัดคิวให้ BUY เกิดก่อนเสมอ
+        let tx_sell = Transaction {
+            id: "tx-sell".to_string(),
+            idempotency_key: None,
+            proj_id: "M0257_2564".to_string(),
+            fund_abbr: Some("K-USA(UH)".to_string()),
+            platform: super::super::models::Platform::KBank,
+            trans_type: TransactionType::Sell,
+            trans_date: "2024-05-10".to_string(),
+            units: dec!(50.0),
+            unit_price: dec!(12.0),
+            total_amount: dec!(600.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        let tx_buy = Transaction {
+            id: "tx-buy".to_string(),
+            idempotency_key: None,
+            proj_id: "M0257_2564".to_string(),
+            fund_abbr: Some("K-USA(UH)".to_string()),
+            platform: super::super::models::Platform::KBank,
+            trans_type: TransactionType::Buy,
+            trans_date: "2024-05-10".to_string(),
+            units: dec!(100.0),
+            unit_price: dec!(10.0),
+            total_amount: dec!(1000.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        let mut nav_map = HashMap::new();
+        nav_map.insert("M0257_2564".to_string(), ("K-USA(UH)".to_string(), Some("กองทุนเค ยูเอสเอ".to_string()), dec!(13.0), Some("2024-05-15".to_string())));
+
+        // ส่ง tx_sell ก่อน tx_buy เข้าฟังก์ชัน
+        let summary = CalculationEngine::calculate_portfolio(vec![tx_sell, tx_buy], &nav_map);
+
+        assert_eq!(summary.holdings.len(), 1);
+        let holding = &summary.holdings[0];
+        assert_eq!(holding.total_units, dec!(50.0));
+        assert_eq!(holding.realized_pl, dec!(100.0)); // (12 - 10) * 50 = 100
+        assert_eq!(holding.asset_type, "FUND", "K-USA(UH) must be classified as FUND, not STOCK");
     }
 }

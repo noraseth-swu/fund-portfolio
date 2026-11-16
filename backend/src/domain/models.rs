@@ -153,6 +153,14 @@ pub struct HoldingPosition {
     pub unrealized_pl_pct: Decimal, // ผลตอบแทน % = (unrealized_pl / total_cost) * 100
     pub realized_pl: Decimal,       // กำไร/ขาดทุนที่เกิดขึ้นแล้วจากการขาย (บาท)
     pub total_dividend: Decimal,    // เงินปันผลสะสมที่ได้รับ (บาท)
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub currency: Option<String>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub price_foreign: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub avg_cost_foreign: Option<Decimal>,
+    #[serde(default, skip_serializing_if = "Option::is_none")]
+    pub exchange_rate: Option<Decimal>,
 }
 
 /// สรุปภาพรวมของแต่ละแพลตฟอร์ม (KBank, ttb, Dime, SCB)
@@ -211,4 +219,89 @@ pub struct PvdPosition {
     pub unrealized_pl: Decimal,
     pub unrealized_pl_pct: Decimal,
     pub statement_file: Option<String>,
+}
+
+/// รายการธุรกรรมที่รอการยืนยันก่อน Commit (Staged Import)
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct PendingTransaction {
+    pub id: String,
+    pub user_id: String,
+    pub sync_batch_id: String,
+    pub source_file: Option<String>,
+    pub source_email: Option<String>,
+    pub platform: String,
+    pub raw_fund_name: String,
+    pub proj_id: Option<String>,
+    pub fund_abbr: Option<String>,
+    pub fund_name_th: Option<String>,
+    pub fund_name_en: Option<String>,
+    pub match_confidence: String,   // "EXACT" | "FUZZY" | "NONE"
+    pub trans_type: String,
+    pub trans_date: String,
+    pub units: Decimal,
+    pub unit_price: Decimal,
+    pub nav_source: String,         // "SEC_HISTORY" | "SEC_LATEST" | "PDF"
+    pub total_amount: Decimal,
+    pub fee: Decimal,
+    pub note: Option<String>,
+    pub status: String,             // "PENDING" | "CONFIRMED" | "REJECTED"
+    #[serde(default)]
+    pub suggestions: Vec<FundSuggestion>,
+    pub created_at: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FundSuggestion {
+    pub proj_id: String,
+    pub fund_abbr: String,
+    pub fund_name_th: Option<String>,
+    pub fund_name_en: Option<String>,
+    pub last_nav: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NavByDateResult {
+    pub nav: Decimal,
+    pub nav_date: String,
+    pub nav_source: String,
+    pub is_exact_date: bool,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PendingPatch {
+    pub proj_id: Option<String>,
+    pub fund_abbr: Option<String>,
+    pub fund_name_th: Option<String>,
+    pub fund_name_en: Option<String>,
+    pub trans_type: Option<String>,
+    pub trans_date: Option<String>,
+    pub units: Option<Decimal>,
+    pub unit_price: Option<Decimal>,
+    pub total_amount: Option<Decimal>,
+    pub fee: Option<Decimal>,
+    pub platform: Option<String>,
+    pub note: Option<String>,
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CommitPendingPayload {
+    pub ids: Option<Vec<String>>,
+    pub all: Option<bool>,
+}
+
+#[derive(Debug, Deserialize, Clone)]
+pub struct CreatePendingPayload {
+    pub platform: String,
+    pub raw_fund_name: String,
+    pub proj_id: Option<String>,
+    pub fund_abbr: Option<String>,
+    pub trans_type: String,
+    pub trans_date: String,
+    pub units: Decimal,
+    pub unit_price: Decimal,
+    pub total_amount: Option<Decimal>,
+    pub fee: Option<Decimal>,
+    pub note: Option<String>,
+    pub sync_batch_id: Option<String>,
+    pub source_file: Option<String>,
 }

@@ -1,0 +1,120 @@
+[
+  {
+    "key": "TTB",
+    "name": "ttb smart port / ttb mutual funds",
+    "enabled": true,
+    "sender_emails": [
+      "estatement@eservice.ttbbank.com"
+    ],
+    "subject_includes": [
+      "confirmation note",
+      "e-statement"
+    ],
+    "subject_excludes": [
+      "statement of holding",
+      "monthly statement",
+      "ใบสรุปข้อมูลบัญชี",
+      "สรุปข้อมูลการลงทุน"
+    ],
+    "extraction_type": "PDF_ATTACHMENT",
+    "password_patterns": [
+      "{DD}{MMM_EN}{YYYY_CE}",
+      "{DD}{MMM_EN_LOWER}{YYYY_CE}",
+      "{DD}{MMM_EN_UPPER}{YYYY_CE}",
+      "{DD}{MM}{YYYY_CE}"
+    ],
+    "ai_prompt_variant": "MUTUAL_FUND_THAI"
+  },
+  {
+    "key": "DIME",
+    "name": "Dime! (Mutual Funds & Offshore Stocks)",
+    "enabled": true,
+    "sender_emails": [
+      "no-reply@dime.co.th"
+    ],
+    "subject_includes": [
+      "ใบยืนยันการซื้อขาย",
+      "confirmation note"
+    ],
+    "subject_excludes": [
+      "สรุปข้อมูลการลงทุน"
+    ],
+    "extraction_type": "PDF_ATTACHMENT",
+    "password_patterns": [
+      "{DD}{MM}{YYYY_CE}",
+      "{DD}{MMM_EN}{YYYY_CE}",
+      "{DD}{MM}{YYYY_CE}"
+    ],
+    "ai_prompt_variant": "AUTO_DETECT_STOCK_OR_FUND"
+  },
+  {
+    "key": "SCB",
+    "name": "SCB Asset Management (บลจ.ไทยพาณิชย์)",
+    "enabled": true,
+    "sender_emails": [
+      "Registrar2@email.scb.co.th",
+      "registrar2@scb.co.th",
+      "scbam_eservice@scb.co.th"
+    ],
+    "subject_includes": [
+      "นายทะเบียนหน่วยลงทุน",
+      "registrar service"
+    ],
+    "subject_excludes": [
+      "monthly statement"
+    ],
+    "extraction_type": "PDF_ATTACHMENT",
+    "password_patterns": [
+      "{NATIONAL_ID_LAST5}",
+      "{NATIONAL_ID_LAST5_ZERO_PADDED}"
+    ],
+    "ai_prompt_variant": "SCB_SHARE_CLASS_AWARE"
+  },
+  {
+    "key": "KBANK",
+    "name": "K-Asset (บลจ.กสิกรไทย)",
+    "enabled": true,
+    "sender_emails": [
+      "ka.CyberInvest@kasikornasset.com",
+      "wealthplus@kasikornbank.com",
+      "KPLUS@kasikornbank.com",
+      "kplus@kasikornbank.com"
+    ],
+    "subject_includes": [
+      "confirming investment unit transactions",
+      "ยืนยันการทำรายการหน่วยลงทุน",
+      "acknowledging purchase order",
+      "acknowledging of purchase order",
+      "ตอบรับคำสั่งซื้อกองทุน"
+    ],
+    "subject_excludes": [
+      "failed",
+      "failure",
+      "ล้มเหลว",
+      "ไม่สำเร็จ",
+      "dca plan creation"
+    ],
+    "extraction_type": "HTML_BODY_TABLE",
+    "password_patterns": [],
+    "ai_prompt_variant": "DEFAULT"
+  },
+  {
+    "key": "KBANK_PVD",
+    "name": "KBank Provident Fund (PVD)",
+    "enabled": true,
+    "sender_emails": [
+      "KA.Pvdcallcenter@kasikornasset.com"
+    ],
+    "subject_includes": [
+      "ใบแจ้งยอดเงินสมาชิกกองทุนสำรองเลี้ยงชีพ",
+      "provident fund"
+    ],
+    "subject_excludes": [],
+    "extraction_type": "PDF_POSITION_SNAPSHOT",
+    "password_patterns": [
+      "{DD}{MM}{YYYY_BE}",
+      "{DD}{MM}{YYYY_CE}"
+    ],
+    "ai_prompt_variant": "DEFAULT"
+  }
+]

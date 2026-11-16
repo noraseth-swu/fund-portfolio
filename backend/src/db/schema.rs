@@ -17,3 +17,16 @@ pub struct BrokerItem {
     pub name_en: String,
     pub category: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct EmailBrokerConfig {
+    pub key: String,
+    pub name: String,
+    pub enabled: bool,
+    pub sender_emails: Vec<String>,
+    pub subject_includes: Vec<String>,
+    pub subject_excludes: Vec<String>,
+    pub extraction_type: String,
+    pub password_patterns: Vec<String>,
+    pub ai_prompt_variant: String,
+}

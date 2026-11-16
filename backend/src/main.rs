@@ -1,4 +1,5 @@
 mod api;
+pub mod codec;
 mod db;
 mod domain;
 mod sec;

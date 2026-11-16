@@ -25,6 +25,7 @@ pub async fn init_db(
     // รัน Migration สร้างตารางอัตโนมัติ
     create_tables(&pool).await?;
     seed_default_brokers(&pool).await?;
+    seed_default_email_broker_configs(&pool).await?;
 
     Ok(pool)
 }
@@ -146,16 +147,16 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
-        -- 2. ตารางประวัติราคา NAV รายวัน
+        -- 2. ตารางประวัติราคา NAV รายวัน (รองรับ Multi-class ตามกฎแม่บท SEC Master Rule)
         CREATE TABLE IF NOT EXISTS fund_nav_history (
             proj_id TEXT NOT NULL,
             nav_date TEXT NOT NULL,
+            fund_class_name TEXT NOT NULL DEFAULT '',
             nav TEXT NOT NULL,
             buy_price TEXT,
             sell_price TEXT,
-            fund_class_name TEXT,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP,
-            PRIMARY KEY (proj_id, nav_date)
+            PRIMARY KEY (proj_id, nav_date, fund_class_name)
         );
 
         -- 3. ตารางบันทึกธุรกรรมการซื้อขายพอร์ตของผู้ใช้ (รองรับ Multi-user และ Idempotent Deduplication)
@@ -190,6 +191,7 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
         CREATE INDEX IF NOT EXISTS idx_trans_platform ON transactions(platform);
         CREATE INDEX IF NOT EXISTS idx_trans_date ON transactions(trans_date);
         CREATE INDEX IF NOT EXISTS idx_nav_proj_date ON fund_nav_history(proj_id, nav_date);
+        CREATE INDEX IF NOT EXISTS idx_nav_proj_date_class ON fund_nav_history(proj_id, nav_date, fund_class_name);
         "#,
     )
     .execute(pool)
@@ -292,10 +294,130 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
             UNIQUE(user_id, idempotency_key)
         );
+
+        -- 10. ตาราง Staging: รายการที่รอ user ตรวจสอบก่อน Commit จริง
+        CREATE TABLE IF NOT EXISTS pending_transactions (
+            id               TEXT PRIMARY KEY,
+            user_id          TEXT NOT NULL DEFAULT 'default_user',
+            sync_batch_id    TEXT NOT NULL,
+            source_file      TEXT,
+            source_email     TEXT,
+            platform         TEXT NOT NULL,
+            raw_fund_name    TEXT NOT NULL,
+            proj_id          TEXT,
+            fund_abbr        TEXT,
+            fund_name_th     TEXT,
+            fund_name_en     TEXT,
+            match_confidence TEXT NOT NULL DEFAULT 'NONE',
+            trans_type       TEXT NOT NULL,
+            trans_date       TEXT NOT NULL,
+            units            TEXT NOT NULL,
+            unit_price       TEXT NOT NULL,
+            nav_source       TEXT NOT NULL DEFAULT 'PDF',
+            total_amount     TEXT NOT NULL,
+            fee              TEXT NOT NULL DEFAULT '0.00',
+            note             TEXT,
+            status           TEXT NOT NULL DEFAULT 'PENDING',
+            created_at       DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at       DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        CREATE INDEX IF NOT EXISTS idx_pending_user_status ON pending_transactions(user_id, status);
+        CREATE INDEX IF NOT EXISTS idx_pending_batch ON pending_transactions(sync_batch_id);
+
+        CREATE TABLE IF NOT EXISTS fund_aliases (
+            alias TEXT PRIMARY KEY,
+            proj_id TEXT NOT NULL,
+            canonical_abbr TEXT NOT NULL,
+            display_name TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_fund_aliases_canonical ON fund_aliases(canonical_abbr);
+        CREATE INDEX IF NOT EXISTS idx_fund_aliases_proj_id ON fund_aliases(proj_id);
+
+        -- 11. ตาราง Master Broker Config สำหรับ Email Harvester
+        CREATE TABLE IF NOT EXISTS email_broker_configs (
+            broker_key TEXT PRIMARY KEY,
+            name TEXT NOT NULL,
+            enabled BOOLEAN NOT NULL DEFAULT 1,
+            sender_emails TEXT NOT NULL,
+            subject_includes TEXT NOT NULL,
+            subject_excludes TEXT NOT NULL,
+            extraction_type TEXT NOT NULL,
+            password_patterns TEXT NOT NULL,
+            ai_prompt_variant TEXT NOT NULL DEFAULT 'DEFAULT',
+            created_at DATETIME DEFAULT CURRENT_TIMESTAMP,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+
+        -- 14. ตารางบันทึกราคาหุ้นต่างประเทศและอัตราแลกเปลี่ยนล่าสุด (US Stocks & FX Quotes)
+        CREATE TABLE IF NOT EXISTS stock_prices (
+            ticker TEXT PRIMARY KEY,
+            price TEXT NOT NULL,
+            currency TEXT NOT NULL,
+            quote_date TEXT NOT NULL,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
         "#,
     )
     .execute(pool)
     .await;
 
+    // Migration: เพิ่มคอลัมน์ nav_source ถ้ายังไม่มี
+    let _ = sqlx::query(
+        "ALTER TABLE pending_transactions ADD COLUMN nav_source TEXT NOT NULL DEFAULT 'PDF'",
+    )
+    .execute(pool)
+    .await;
+
+    Ok(())
+}
+
+pub async fn seed_default_email_broker_configs(
+    pool: &DbPool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM email_broker_configs")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    if count == 0 {
+        let config_str = std::fs::read_to_string("config/email_sync_brokers.json")
+            .or_else(|_| std::fs::read_to_string("backend/config/email_sync_brokers.json"))
+            .unwrap_or_else(|_| include_str!("../../config/email_sync_brokers.json").to_string());
+
+        let brokers: Vec<serde_json::Value> = serde_json::from_str(&config_str).unwrap_or_default();
+        for b in brokers {
+            let key = b.get("key").and_then(|v| v.as_str()).unwrap_or("");
+            let name = b.get("name").and_then(|v| v.as_str()).unwrap_or("");
+            let enabled = b.get("enabled").and_then(|v| v.as_bool()).unwrap_or(true);
+            let sender_emails = serde_json::to_string(b.get("sender_emails").unwrap_or(&serde_json::json!([]))).unwrap_or_default();
+            let subject_includes = serde_json::to_string(b.get("subject_includes").unwrap_or(&serde_json::json!([]))).unwrap_or_default();
+            let subject_excludes = serde_json::to_string(b.get("subject_excludes").unwrap_or(&serde_json::json!([]))).unwrap_or_default();
+            let extraction_type = b.get("extraction_type").and_then(|v| v.as_str()).unwrap_or("PDF_ATTACHMENT");
+            let password_patterns = serde_json::to_string(b.get("password_patterns").unwrap_or(&serde_json::json!([]))).unwrap_or_default();
+            let ai_prompt_variant = b.get("ai_prompt_variant").and_then(|v| v.as_str()).unwrap_or("DEFAULT");
+
+            sqlx::query(
+                r#"
+                INSERT INTO email_broker_configs (
+                    broker_key, name, enabled, sender_emails, subject_includes, subject_excludes,
+                    extraction_type, password_patterns, ai_prompt_variant
+                ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9)
+                ON CONFLICT(broker_key) DO NOTHING
+                "#,
+            )
+            .bind(key)
+            .bind(name)
+            .bind(enabled)
+            .bind(sender_emails)
+            .bind(subject_includes)
+            .bind(subject_excludes)
+            .bind(extraction_type)
+            .bind(password_patterns)
+            .bind(ai_prompt_variant)
+            .execute(pool)
+            .await?;
+        }
+    }
     Ok(())
 }

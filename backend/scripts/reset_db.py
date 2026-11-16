@@ -11,6 +11,18 @@ print("--- RESETTING PORTFOLIO DATABASE ---")
 c.execute("DELETE FROM transactions")
 print(f"[✓] Cleared transactions table (deleted {c.rowcount} rows)")
 
+try:
+    c.execute("DELETE FROM pending_transactions")
+    print(f"[✓] Cleared pending_transactions table (deleted {c.rowcount} rows)")
+except sqlite3.OperationalError:
+    pass
+
+try:
+    c.execute("DELETE FROM stock_transactions")
+    print(f"[✓] Cleared stock_transactions table (deleted {c.rowcount} rows)")
+except sqlite3.OperationalError:
+    pass
+
 c.execute("DELETE FROM processed_emails")
 print(f"[✓] Cleared processed_emails cache (deleted {c.rowcount} rows)")
 

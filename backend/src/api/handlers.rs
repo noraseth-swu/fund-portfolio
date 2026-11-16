@@ -14,6 +14,9 @@ use axum::{
 };
 use rust_decimal::Decimal;
 use serde::{Deserialize, Serialize};
+use sqlx::Row;
+use std::collections::HashMap;
+use std::str::FromStr;
 use std::sync::Arc;
 use uuid::Uuid;
 
@@ -72,7 +75,13 @@ pub async fn get_portfolio(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let mut summary = CalculationEngine::calculate_portfolio(txs, &nav_map);
+    // กรองเฉพาะรายการกองทุนรวมเพื่อส่งให้ CalculationEngine (คัดแยกหุ้น tx_stk_ ออก เพื่อป้องกันการคำนวณซ้ำซ้อน)
+    let fund_txs: Vec<Transaction> = txs
+        .into_iter()
+        .filter(|t| !t.id.starts_with("tx_stk_"))
+        .collect();
+
+    let mut summary = CalculationEngine::calculate_portfolio(fund_txs, &nav_map);
 
     // รวมข้อมูลกองทุนสำรองเลี้ยงชีพ (PVD Latest Position Snapshot)
     if let Ok(pvd_positions) = Repository::get_pvd_positions(&state.pool, &auth.user_id).await {
@@ -117,23 +126,205 @@ pub async fn get_portfolio(
                 unrealized_pl_pct: pvd.unrealized_pl_pct,
                 realized_pl: Decimal::ZERO,
                 total_dividend: Decimal::ZERO,
+                currency: None,
+                price_foreign: None,
+                avg_cost_foreign: None,
+                exchange_rate: None,
             });
         }
+    }
 
-        // คำนวณสัดส่วน % ภาพรวมใหม่
-        if summary.total_cost > Decimal::ZERO {
-            summary.total_unrealized_pl_pct = ((summary.total_unrealized_pl / summary.total_cost)
-                * Decimal::from(100))
-            .round_dp(2);
+    // โหลดราคาหุ้นและอัตราแลกเปลี่ยนล่าสุดจาก stock_prices
+    let mut price_map: HashMap<String, (Decimal, String, String)> = HashMap::new();
+    if let Ok(stock_prices_rows) = sqlx::query("SELECT ticker, price, currency, quote_date FROM stock_prices")
+        .fetch_all(&state.pool)
+        .await
+    {
+        for row in stock_prices_rows {
+            let t: String = row.get("ticker");
+            let p_str: String = row.get("price");
+            let c: String = row.get("currency");
+            let qd: String = row.get("quote_date");
+            if let Ok(p) = Decimal::from_str(&p_str) {
+                price_map.insert(t, (p, c, qd));
+            }
         }
-        if summary.market_value > Decimal::ZERO {
-            for plat in summary.platforms.values_mut() {
-                plat.allocation_pct =
-                    ((plat.market_value / summary.market_value) * Decimal::from(100)).round_dp(2);
-                if plat.total_cost > Decimal::ZERO {
-                    plat.unrealized_pl_pct =
-                        ((plat.unrealized_pl / plat.total_cost) * Decimal::from(100)).round_dp(2);
+    }
+
+    // หากยังไม่เคยมีราคาหุ้นในตาราง stock_prices ให้ trigger sync ทันที
+    if price_map.is_empty() {
+        let _ = SyncService::sync_stock_prices(&state.pool).await;
+        if let Ok(fresh_rows) = sqlx::query("SELECT ticker, price, currency, quote_date FROM stock_prices")
+            .fetch_all(&state.pool)
+            .await
+        {
+            for row in fresh_rows {
+                let t: String = row.get("ticker");
+                let p_str: String = row.get("price");
+                let c: String = row.get("currency");
+                let qd: String = row.get("quote_date");
+                if let Ok(p) = Decimal::from_str(&p_str) {
+                    price_map.insert(t, (p, c, qd));
                 }
+            }
+        }
+    }
+
+    let usd_thb_rate = price_map
+        .get("USDTHB")
+        .or_else(|| price_map.get("THB=X"))
+        .map(|(p, _, _)| *p)
+        .unwrap_or_else(|| Decimal::from_str("34.00").unwrap());
+
+    // รวมข้อมูลหุ้นต่างประเทศ (US Stocks from stock_transactions)
+    if let Ok(stock_rows) = sqlx::query(
+        r#"
+        SELECT ticker, company_name, platform, trans_type, trans_date, shares, price_usd, total_thb, fee_thb
+        FROM stock_transactions
+        WHERE user_id = ?1
+        ORDER BY trans_date ASC
+        "#
+    )
+    .bind(&auth.user_id)
+    .fetch_all(&state.pool)
+    .await
+    {
+        struct StockTracker {
+            ticker: String,
+            name: String,
+            platform: String,
+            shares: Decimal,
+            cost_thb: Decimal,
+            cost_usd: Decimal,
+            last_price_usd: Decimal,
+            last_date: String,
+        }
+        let mut trackers: HashMap<String, StockTracker> = HashMap::new();
+        for row in stock_rows {
+            let ticker: String = row.get("ticker");
+            let name: String = row.get("company_name");
+            let platform: String = row.get("platform");
+            let trans_type: String = row.get("trans_type");
+            let trans_date: String = row.get("trans_date");
+            let shares: Decimal = Decimal::from_str(&row.get::<String, _>("shares")).unwrap_or(Decimal::ZERO);
+            let price_usd: Decimal = Decimal::from_str(&row.get::<String, _>("price_usd")).unwrap_or(Decimal::ZERO);
+            let total_thb: Decimal = Decimal::from_str(&row.get::<String, _>("total_thb")).unwrap_or(Decimal::ZERO);
+            let fee_thb: Decimal = Decimal::from_str(&row.get::<String, _>("fee_thb")).unwrap_or(Decimal::ZERO);
+
+            let entry = trackers.entry(ticker.clone()).or_insert_with(|| StockTracker {
+                ticker: ticker.clone(),
+                name: if name.is_empty() { ticker.clone() } else { name },
+                platform: platform.clone(),
+                shares: Decimal::ZERO,
+                cost_thb: Decimal::ZERO,
+                cost_usd: Decimal::ZERO,
+                last_price_usd: price_usd,
+                last_date: trans_date.clone(),
+            });
+
+            if trans_type.to_uppercase() == "BUY" {
+                entry.shares += shares;
+                entry.cost_thb += total_thb + fee_thb;
+                entry.cost_usd += shares * price_usd;
+            } else if trans_type.to_uppercase() == "SELL" {
+                if entry.shares > Decimal::ZERO {
+                    let avg_thb = entry.cost_thb / entry.shares;
+                    let avg_usd = entry.cost_usd / entry.shares;
+                    entry.shares -= shares;
+                    entry.cost_thb -= avg_thb * shares;
+                    entry.cost_usd -= avg_usd * shares;
+                }
+            }
+            entry.last_price_usd = price_usd;
+            entry.last_date = trans_date;
+        }
+
+        for (_, st) in trackers {
+            if st.shares > Decimal::ZERO {
+                // หาราคาปัจจุบัน และวันที่ราคา จาก stock_prices (fallback เป็นราคาในรายการล่าสุด)
+                let (current_price_usd, quote_date) = if let Some((p, _, d)) = price_map.get(&st.ticker) {
+                    (*p, d.clone())
+                } else {
+                    (st.last_price_usd, st.last_date.clone())
+                };
+
+                // คำนวณราคาปัจจุบันและมูลค่าตลาดเป็นเงินบาท (THB)
+                let current_price_thb = current_price_usd * usd_thb_rate;
+                let market_val_thb = st.shares * current_price_thb;
+                let unrealized_pl_thb = market_val_thb - st.cost_thb;
+                let unrealized_pl_pct = if st.cost_thb > Decimal::ZERO {
+                    ((unrealized_pl_thb / st.cost_thb) * Decimal::from(100)).round_dp(2)
+                } else {
+                    Decimal::ZERO
+                };
+
+                let avg_cost_usd = if st.shares > Decimal::ZERO {
+                    (st.cost_usd / st.shares).round_dp(4)
+                } else {
+                    Decimal::ZERO
+                };
+
+                let avg_cost_thb = if st.shares > Decimal::ZERO {
+                    (st.cost_thb / st.shares).round_dp(4)
+                } else {
+                    Decimal::ZERO
+                };
+
+                summary.total_cost += st.cost_thb;
+                summary.market_value += market_val_thb;
+                summary.total_unrealized_pl += unrealized_pl_thb;
+
+                let entry = summary.platforms.entry(st.platform.clone()).or_insert(PlatformSummary {
+                    platform: st.platform.clone(),
+                    total_cost: Decimal::ZERO,
+                    market_value: Decimal::ZERO,
+                    unrealized_pl: Decimal::ZERO,
+                    unrealized_pl_pct: Decimal::ZERO,
+                    realized_pl: Decimal::ZERO,
+                    allocation_pct: Decimal::ZERO,
+                });
+                entry.total_cost += st.cost_thb;
+                entry.market_value += market_val_thb;
+                entry.unrealized_pl += unrealized_pl_thb;
+
+                summary.holdings.push(HoldingPosition {
+                    proj_id: st.ticker.clone(),
+                    fund_abbr: st.ticker.clone(),
+                    fund_name_th: Some(format!("หุ้นสหรัฐฯ ({})", st.name)),
+                    platform: st.platform,
+                    total_units: st.shares.round_dp(4),
+                    avg_cost: avg_cost_thb,
+                    total_cost: st.cost_thb.round_dp(2),
+                    current_nav: current_price_usd.round_dp(4),
+                    nav_date: Some(quote_date),
+                    asset_type: "STOCK".to_string(),
+                    market_value: market_val_thb.round_dp(2),
+                    unrealized_pl: unrealized_pl_thb.round_dp(2),
+                    unrealized_pl_pct,
+                    realized_pl: Decimal::ZERO,
+                    total_dividend: Decimal::ZERO,
+                    currency: Some("USD".to_string()),
+                    price_foreign: Some(current_price_usd.round_dp(4)),
+                    avg_cost_foreign: Some(avg_cost_usd),
+                    exchange_rate: Some(usd_thb_rate.round_dp(4)),
+                });
+            }
+        }
+    }
+
+    // คำนวณสัดส่วน % ภาพรวมใหม่
+    if summary.total_cost > Decimal::ZERO {
+        summary.total_unrealized_pl_pct = ((summary.total_unrealized_pl / summary.total_cost)
+            * Decimal::from(100))
+        .round_dp(2);
+    }
+    if summary.market_value > Decimal::ZERO {
+        for plat in summary.platforms.values_mut() {
+            plat.allocation_pct =
+                ((plat.market_value / summary.market_value) * Decimal::from(100)).round_dp(2);
+            if plat.total_cost > Decimal::ZERO {
+                plat.unrealized_pl_pct =
+                    ((plat.unrealized_pl / plat.total_cost) * Decimal::from(100)).round_dp(2);
             }
         }
     }
@@ -267,6 +458,62 @@ pub async fn create_transactions_batch(
     ))
 }
 
+/// PUT /api/transactions/:id
+/// แก้ไขรายการธุรกรรม (เฉพาะรายการที่เป็นของ user_id นั้น)
+pub async fn update_transaction(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(id): Path<String>,
+    Json(payload): Json<CreateTransactionPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let total_amount = payload
+        .total_amount
+        .unwrap_or_else(|| payload.units * payload.unit_price);
+
+    let fee = payload.fee.unwrap_or(Decimal::ZERO);
+
+    let idempotency_key = Transaction::compute_idempotency_key(
+        &auth.user_id,
+        &payload.platform,
+        &payload.proj_id,
+        payload.fund_abbr.as_deref(),
+        &payload.trans_date,
+        &payload.trans_type,
+        &payload.units,
+        &total_amount,
+        payload.note.as_deref(),
+    );
+
+    let tx = Transaction {
+        id: id.clone(),
+        idempotency_key: Some(idempotency_key),
+        proj_id: payload.proj_id,
+        fund_abbr: payload.fund_abbr,
+        platform: Platform::from_str(&payload.platform),
+        trans_type: TransactionType::from_str(&payload.trans_type),
+        trans_date: payload.trans_date,
+        units: payload.units,
+        unit_price: payload.unit_price,
+        total_amount,
+        fee,
+        note: payload.note,
+    };
+
+    let updated = Repository::update_transaction(&state.pool, &auth.user_id, &id, &tx)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if updated {
+        Ok(Json(serde_json::json!({
+            "success": true,
+            "message": "Transaction updated",
+            "transaction": tx
+        })))
+    } else {
+        Err((StatusCode::NOT_FOUND, "Transaction not found".to_string()))
+    }
+}
+
 /// DELETE /api/transactions/:id
 /// ลบรายการธุรกรรม (เฉพาะรายการที่เป็นของ user_id นั้น)
 pub async fn delete_transaction(
@@ -327,7 +574,7 @@ pub async fn search_funds(
 }
 
 /// POST /api/funds/sync
-/// Trigger การดึงราคา NAV ล่าสุดจาก SEC API ทันที
+/// Trigger การดึงราคา NAV ล่าสุดจาก SEC API และราคาหุ้นสหรัฐฯ / อัตราแลกเปลี่ยนจาก Yahoo Finance ทันที
 pub async fn trigger_sync(
     State(state): State<Arc<AppState>>,
 ) -> Result<impl IntoResponse, (StatusCode, String)> {
@@ -335,9 +582,35 @@ pub async fn trigger_sync(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
+    let stock_count = SyncService::sync_stock_prices(&state.pool)
+        .await
+        .unwrap_or(0);
+
+    let latest_fund_date = sqlx::query_scalar::<_, String>(
+        "SELECT MAX(nav_date) FROM fund_nav_history",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let latest_stock_date = sqlx::query_scalar::<_, String>(
+        "SELECT MAX(quote_date) FROM stock_prices",
+    )
+    .fetch_optional(&state.pool)
+    .await
+    .unwrap_or(None);
+
+    let latest_date = match (latest_fund_date, latest_stock_date) {
+        (Some(f), Some(s)) => Some(std::cmp::max(f, s)),
+        (Some(f), None) => Some(f),
+        (None, Some(s)) => Some(s),
+        (None, None) => None,
+    };
+
     Ok(Json(serde_json::json!({
         "success": true,
-        "updated_funds_count": count
+        "updated_funds_count": count + stock_count,
+        "latest_nav_date": latest_date
     })))
 }
 
@@ -384,10 +657,12 @@ pub async fn parse_statement(
     let system_instructions = r#"Precision financial statement parser for Thai Mutual Funds (KBank, SCBAM, ttb, Dime!, InnovestX, Krungsri, BBLAM, etc.).
 Extract all mutual fund transactions (subscription/buy, redemption/sell, dividend, switching).
 RULES:
-1. fund_abbr: COMPLETE fund name or ticker. Never truncate. Join multi-line table rows completely (e.g. 'TMB EASTSPRING' + 'Asia Active Fund' -> 'TMB EASTSPRING Asia Active Fund').
-2. trans_type: 'BUY', 'SELL', or 'DIVIDEND' (SUBSCRIPTION=BUY, REDEMPTION=SELL).
-3. trans_date: 'YYYY-MM-DD' (convert Buddhist Era 25xx to CE 20xx e.g. 2567->2024).
-4. note: Only short transaction ref or empty string.
+1. fund_abbr: COMPLETE fund name or ticker. Never truncate. Preserve exact unitholder share class suffixes (e.g. 'SCBS&P500E', 'NDQ(E)', 'SCBNDQ(E)', 'K-FIXEDPLUS-A', 'ES-USTECH').
+2. platform: The asset management company (AMC) or distributing broker (e.g. 'SCB' for บลจ. ไทยพาณิชย์ / SCBAM, 'KBANK' for บลจ. กสิกรไทย, 'TTB' for TTB / Eastspring, 'DIME' for Dime!).
+   CRITICAL: 'ผู้ดูแลผลประโยชน์ / Fund Supervisor / Custodian' is merely the custodian bank, NOT the platform! For example, if a statement is issued by SCB Asset Management (บลจ. ไทยพาณิชย์), the platform MUST strictly be 'SCB', even if 'ผู้ดูแลผลประโยชน์' is ธนาคารกสิกรไทย (KBank).
+3. trans_type: 'BUY', 'SELL', or 'DIVIDEND' (SUBSCRIPTION=BUY, REDEMPTION=SELL, SWITCH IN=BUY, SWITCH OUT=SELL).
+4. trans_date: 'YYYY-MM-DD' (convert Buddhist Era 25xx to CE 20xx e.g. 2567->2024).
+5. note: Only short transaction ref or empty string.
 
 OUTPUT FORMAT:
 Return a JSON 2D array of rows conforming strictly to:
@@ -482,7 +757,7 @@ Return empty array [] if no transactions found."#;
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
-                    let platform = row
+                    let mut platform = row
                         .get(1)
                         .and_then(|v| v.as_str())
                         .unwrap_or("OTHER")
@@ -492,6 +767,14 @@ Return empty array [] if no transactions found."#;
                         .and_then(|v| v.as_str())
                         .unwrap_or_default()
                         .to_string();
+
+                    // Sanity check: prevent custodian bank (e.g. KBank as fund supervisor) from overriding SCB/TTB platform
+                    let upper_fund = fund_abbr.to_uppercase();
+                    if (upper_fund.starts_with("SCB") || upper_fund.starts_with("SP500E") || upper_fund.starts_with("NDQ(")) && platform == "KBANK" {
+                        platform = "SCB".to_string();
+                    } else if (upper_fund.starts_with("ES-") || upper_fund.starts_with("TMB") || upper_fund.starts_with("TTB")) && platform == "KBANK" {
+                        platform = "TTB".to_string();
+                    }
                     let trans_type = row
                         .get(3)
                         .and_then(|v| v.as_str())
@@ -824,6 +1107,8 @@ pub async fn start_email_sync(
             &state.gemini_api_key,
             "--max-emails",
             "0",
+            "--concurrency",
+            "5",
         ])
         .spawn()
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, format!("Failed to spawn harvester: {e}")))?;
@@ -854,7 +1139,65 @@ pub async fn get_email_sync_status(
         }
     }
 
-    let mut progress_val = if let Ok(content) = tokio::fs::read_to_string("sync_progress.json").await {
+    // Dual-Mode Reading: Prioritize fast Binary Envelope (sync_progress.bin), fallback to sync_progress.json
+    let mut progress_val = if let Ok(bin_bytes) = tokio::fs::read("sync_progress.bin").await {
+        match crate::codec::BinaryEnvelopeCodec::decode_sync_progress(&bin_bytes) {
+            Ok(s) => {
+                let mut broker: Option<String> = None;
+                let mut email_index: Option<u32> = None;
+                let mut total_emails = s.total_emails;
+
+                // Extract [BROKER] [curr/total] from status_text if present e.g. "[TTB] [12/167]"
+                if let Some(rest) = s.status_text.strip_prefix('[') {
+                    if let Some((b_str, after_b)) = rest.split_once(']') {
+                        broker = Some(b_str.trim().to_string());
+                        if let Some(start_idx) = after_b.find('[') {
+                            if let Some(end_idx) = after_b[start_idx..].find(']') {
+                                let counts = &after_b[start_idx + 1..start_idx + end_idx];
+                                if let Some((curr, tot)) = counts.split_once('/') {
+                                    if let Ok(c) = curr.trim().parse::<u32>() {
+                                        email_index = Some(c);
+                                    }
+                                    if let Ok(t) = tot.trim().parse::<u32>() {
+                                        total_emails = t;
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+
+                let mut val = serde_json::json!({
+                    "is_running": s.is_running,
+                    "completed": s.completed,
+                    "cancelled": s.cancelled,
+                    "emails_scanned": s.emails_scanned,
+                    "total_emails": total_emails,
+                    "attachments_found": s.attachments_found,
+                    "new_tx_count": s.new_tx_count,
+                    "skipped_tx_count": s.skipped_tx_count,
+                    "status_text": s.status_text,
+                    "recent_logs": s.recent_logs,
+                    "codec": "binary_envelope_v1"
+                });
+                if let Some(b) = broker {
+                    val["broker"] = serde_json::json!(b);
+                }
+                if let Some(idx) = email_index {
+                    val["email_index"] = serde_json::json!(idx);
+                }
+                val
+            }
+            Err(e) => {
+                tracing::warn!("[BinaryEnvelope] Failed to decode sync_progress.bin ({e}), trying JSON");
+                if let Ok(content) = tokio::fs::read_to_string("sync_progress.json").await {
+                    serde_json::from_str::<serde_json::Value>(&content).unwrap_or(serde_json::json!({}))
+                } else {
+                    serde_json::json!({})
+                }
+            }
+        }
+    } else if let Ok(content) = tokio::fs::read_to_string("sync_progress.json").await {
         serde_json::from_str::<serde_json::Value>(&content).unwrap_or(serde_json::json!({}))
     } else {
         serde_json::json!({
@@ -936,6 +1279,120 @@ pub async fn cancel_email_sync(
     })))
 }
 
+/// GET /api/email/sync/cache/stats
+/// ดึงสถิติจำนวนอีเมลและไฟล์แนบที่เคยประมวลผลแล้วในแคช
+pub async fn get_sync_cache_stats(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let stats = Repository::get_sync_cache_stats(&state.pool, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(stats))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct ResetCachePayload {
+    pub broker: Option<String>,
+    pub clear_attachments: Option<bool>,
+    pub clear_pending: Option<bool>,
+}
+
+/// POST /api/email/sync/cache/reset
+/// ล้างแคชประวัติการสแกนอีเมล (เพื่อให้ระบบสามารถสแกนอีเมลฉบับเก่าซ้ำใหม่ได้)
+pub async fn reset_sync_cache(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<ResetCachePayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let result = Repository::reset_sync_cache(
+        &state.pool,
+        &auth.user_id,
+        payload.broker.as_deref(),
+        payload.clear_attachments.unwrap_or(true),
+        payload.clear_pending.unwrap_or(false),
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(result))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct CacheListQuery {
+    pub broker: Option<String>,
+    pub limit: Option<i64>,
+}
+
+/// GET /api/email/sync/cache/list
+/// ดึงรายการอีเมลในแคช
+pub async fn list_cached_emails(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Query(query): Query<CacheListQuery>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let list = Repository::list_cached_emails(
+        &state.pool,
+        query.broker.as_deref(),
+        query.limit.unwrap_or(100),
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(list))
+}
+
+/// DELETE /api/email/sync/cache/:message_id
+/// ลบอีเมลฉบับเดียวออกจากแคช
+pub async fn delete_cached_email(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Path(message_id): Path<String>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let deleted = Repository::delete_cached_email(&state.pool, &message_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "deleted": deleted })))
+}
+
+/// GET /api/email/sync/brokers
+pub async fn get_email_brokers(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let brokers = Repository::get_email_broker_configs(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(brokers))
+}
+
+/// PUT /api/email/sync/brokers
+pub async fn update_email_brokers(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(brokers): Json<Vec<crate::db::schema::EmailBrokerConfig>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    Repository::update_email_broker_configs(&state.pool, &brokers)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    let updated = Repository::get_email_broker_configs(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(updated))
+}
+
+/// POST /api/email/sync/brokers/reset
+pub async fn reset_email_brokers(
+    _auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let reset = Repository::reset_email_broker_configs(&state.pool)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+    Ok(Json(reset))
+}
+
 /// POST /api/email/sync
 pub async fn sync_email_statements(
     auth: AuthUser,
@@ -985,6 +1442,8 @@ pub async fn sync_email_statements(
             &state.gemini_api_key,
             "--max-emails",
             "0", // 0 = Full sweep from oldest to newest with Checkpoint & Resume cache!
+            "--concurrency",
+            "5",
         ])
         .output()
         .await
@@ -1000,4 +1459,270 @@ pub async fn sync_email_statements(
             format!("Error running email sync: {stdout_str} {stderr_str}"),
         ))
     }
+}
+
+// ==========================================
+// Staged Import (Review Before Commit) APIs
+// ==========================================
+
+#[derive(Debug, Deserialize)]
+pub struct NavByDateQuery {
+    pub proj_id: String,
+    pub date: String,
+    pub fund_abbr: Option<String>,
+}
+
+/// GET /api/nav/by-date?proj_id=...&date=YYYY-MM-DD&fund_abbr=...
+pub async fn get_nav_by_date(
+    Query(params): Query<NavByDateQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut result = Repository::get_nav_by_date(
+        &state.pool, 
+        &params.proj_id, 
+        &params.date, 
+        params.fund_abbr.as_deref()
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // If not found in local history, on-demand fetch from SEC API!
+    if result.is_none() && !state.api_key.is_empty() {
+        let trimmed = params.proj_id.trim();
+        let alias_proj_id = sqlx::query_scalar::<_, String>(
+            "SELECT proj_id FROM fund_aliases WHERE UPPER(alias) = UPPER(?1) LIMIT 1",
+        )
+        .bind(trimmed)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None);
+
+        let sec_proj_id = if let Some(pid) = alias_proj_id {
+            pid
+        } else if let Ok(Some(row)) = sqlx::query(
+            "SELECT proj_id FROM funds WHERE UPPER(proj_abbr_name) = UPPER(?1) OR proj_id = ?1 LIMIT 1",
+        )
+        .bind(trimmed)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            row.get::<String, _>("proj_id")
+        } else {
+            trimmed.to_string()
+        };
+
+        let mut sec_client = crate::sec::SecClient::new(state.api_key.clone());
+        if let Ok(nav_items) = sec_client.get_fund_nav_history(&sec_proj_id).await {
+            if !nav_items.is_empty() {
+                let _ = Repository::upsert_nav_history(&state.pool, &sec_proj_id, &nav_items).await;
+                if sec_proj_id != trimmed {
+                    let _ = Repository::upsert_nav_history(&state.pool, trimmed, &nav_items).await;
+                }
+                result = Repository::get_nav_by_date(
+                    &state.pool, 
+                    &params.proj_id, 
+                    &params.date, 
+                    params.fund_abbr.as_deref()
+                ).await.unwrap_or(None);
+            }
+        }
+    }
+
+    match result {
+        Some(res) => Ok(Json(res)),
+        None => Err((
+            StatusCode::NOT_FOUND,
+            format!("No NAV found for {} on or before {}", params.proj_id, params.date),
+        )),
+    }
+}
+
+#[derive(Debug, Deserialize)]
+pub struct NavMonthQuery {
+    pub proj_id: String,
+    pub month: String,
+    pub fund_abbr: Option<String>,
+}
+
+/// GET /api/nav/month-dates?proj_id=...&month=YYYY-MM&fund_abbr=...
+pub async fn get_nav_dates_for_month(
+    Query(params): Query<NavMonthQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let mut result = Repository::get_nav_dates_for_month(
+        &state.pool,
+        &params.proj_id,
+        &params.month,
+        params.fund_abbr.as_deref(),
+    )
+    .await
+    .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // If no NAV in local database, fetch on-demand from SEC API!
+    if result.is_empty() && !state.api_key.is_empty() {
+        let trimmed = params.proj_id.trim();
+        let alias_proj_id = sqlx::query_scalar::<_, String>(
+            "SELECT proj_id FROM fund_aliases WHERE UPPER(alias) = UPPER(?1) LIMIT 1",
+        )
+        .bind(trimmed)
+        .fetch_optional(&state.pool)
+        .await
+        .unwrap_or(None);
+
+        let sec_proj_id = if let Some(pid) = alias_proj_id {
+            pid
+        } else if let Ok(Some(row)) = sqlx::query(
+            "SELECT proj_id FROM funds WHERE UPPER(proj_abbr_name) = UPPER(?1) OR proj_id = ?1 LIMIT 1",
+        )
+        .bind(trimmed)
+        .fetch_optional(&state.pool)
+        .await
+        {
+            row.get::<String, _>("proj_id")
+        } else {
+            trimmed.to_string()
+        };
+
+        let mut sec_client = crate::sec::SecClient::new(state.api_key.clone());
+        if let Ok(nav_items) = sec_client.get_fund_nav_history(&sec_proj_id).await {
+            if !nav_items.is_empty() {
+                let _ = Repository::upsert_nav_history(&state.pool, &sec_proj_id, &nav_items).await;
+                if sec_proj_id != trimmed {
+                    let _ = Repository::upsert_nav_history(&state.pool, trimmed, &nav_items).await;
+                }
+                if let Ok(fresh) = Repository::get_nav_dates_for_month(
+                    &state.pool,
+                    &sec_proj_id,
+                    &params.month,
+                    params.fund_abbr.as_deref(),
+                ).await {
+                    result = fresh;
+                }
+            }
+        }
+    }
+
+    Ok(Json(serde_json::json!({
+        "proj_id": params.proj_id,
+        "month": params.month,
+        "nav_dates": result
+    })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct PendingQuery {
+    pub status: Option<String>,
+}
+
+/// GET /api/transactions/pending?status=PENDING
+pub async fn get_pending_transactions(
+    auth: AuthUser,
+    Query(query): Query<PendingQuery>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let list = Repository::get_pending_transactions(&state.pool, &auth.user_id, query.status.as_deref())
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(list))
+}
+
+/// POST /api/transactions/pending (เพิ่มรายการ Pending ด้วยตัวเอง)
+pub async fn create_pending_transaction(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<crate::domain::CreatePendingPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let id = Repository::insert_pending_transaction(&state.pool, &auth.user_id, &payload)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "id": id, "status": "created" }))))
+}
+
+/// POST /api/transactions/pending/batch (เพิ่มรายการ Pending เป็นชุดจาก Universal Importer หรือ Batch Entry)
+pub async fn create_pending_transactions_batch(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(batch): Json<Vec<crate::domain::CreatePendingPayload>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let count = Repository::insert_pending_transactions_batch(&state.pool, &auth.user_id, &batch)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok((StatusCode::CREATED, Json(serde_json::json!({ "inserted_count": count, "status": "staged" }))))
+}
+
+/// PATCH /api/transactions/pending/:id
+pub async fn update_pending_transaction(
+    auth: AuthUser,
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+    Json(patch): Json<crate::domain::PendingPatch>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let updated = Repository::update_pending_transaction(&state.pool, &id, &auth.user_id, &patch)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if updated {
+        Ok(Json(serde_json::json!({ "status": "updated", "id": id })))
+    } else {
+        Err((StatusCode::NOT_FOUND, "Pending transaction not found".to_string()))
+    }
+}
+
+/// DELETE /api/transactions/pending/:id
+pub async fn delete_pending_transaction(
+    auth: AuthUser,
+    Path(id): Path<String>,
+    State(state): State<Arc<AppState>>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let deleted = Repository::delete_pending_transaction(&state.pool, &id, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    if deleted {
+        Ok(Json(serde_json::json!({ "status": "deleted", "id": id })))
+    } else {
+        Err((StatusCode::NOT_FOUND, "Pending transaction not found".to_string()))
+    }
+}
+
+/// POST /api/transactions/pending/commit
+pub async fn commit_pending_transactions(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<crate::domain::CommitPendingPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let committed = if payload.all.unwrap_or(false) {
+        Repository::commit_all_pending(&state.pool, &auth.user_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else if let Some(ids) = payload.ids {
+        Repository::commit_pending_transactions(&state.pool, &ids, &auth.user_id)
+            .await
+            .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?
+    } else {
+        0
+    };
+
+    Ok(Json(serde_json::json!({ "status": "committed", "count": committed })))
+}
+
+#[derive(Debug, Deserialize)]
+pub struct BatchDeletePendingPayload {
+    pub ids: Vec<String>,
+}
+
+/// POST /api/transactions/pending/batch-delete
+pub async fn batch_delete_pending(
+    auth: AuthUser,
+    State(state): State<Arc<AppState>>,
+    Json(payload): Json<BatchDeletePendingPayload>,
+) -> Result<impl IntoResponse, (StatusCode, String)> {
+    let deleted = Repository::batch_delete_pending(&state.pool, &payload.ids, &auth.user_id)
+        .await
+        .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    Ok(Json(serde_json::json!({ "status": "deleted", "count": deleted })))
 }

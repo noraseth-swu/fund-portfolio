@@ -4,7 +4,7 @@ pub mod handlers;
 use crate::db::DbPool;
 use axum::{
     Router,
-    routing::{delete, get, post},
+    routing::{delete, get, patch, post},
 };
 use std::path::Path;
 use std::sync::Arc;
@@ -47,7 +47,32 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         )
         .route(
             "/api/transactions/{id}",
-            delete(handlers::delete_transaction),
+            delete(handlers::delete_transaction).put(handlers::update_transaction),
+        )
+        // Staged Import & Pending Transactions
+        .route("/api/nav/by-date", get(handlers::get_nav_by_date))
+        .route("/api/nav/month-dates", get(handlers::get_nav_dates_for_month))
+        .route(
+            "/api/transactions/pending",
+            get(handlers::get_pending_transactions)
+                .post(handlers::create_pending_transaction),
+        )
+        .route(
+            "/api/transactions/pending/batch",
+            post(handlers::create_pending_transactions_batch),
+        )
+        .route(
+            "/api/transactions/pending/commit",
+            post(handlers::commit_pending_transactions),
+        )
+        .route(
+            "/api/transactions/pending/batch-delete",
+            post(handlers::batch_delete_pending),
+        )
+        .route(
+            "/api/transactions/pending/{id}",
+            patch(handlers::update_pending_transaction)
+                .delete(handlers::delete_pending_transaction),
         )
         // Statement AI Parser (PDF / Text via Gemini)
         .route("/api/parse/statement", post(handlers::parse_statement))
@@ -68,6 +93,18 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         .route("/api/email/sync/start", post(handlers::start_email_sync))
         .route("/api/email/sync/status", get(handlers::get_email_sync_status))
         .route("/api/email/sync/cancel", post(handlers::cancel_email_sync))
+        .route("/api/email/sync/cache/stats", get(handlers::get_sync_cache_stats))
+        .route("/api/email/sync/cache/reset", post(handlers::reset_sync_cache))
+        .route("/api/email/sync/cache/list", get(handlers::list_cached_emails))
+        .route("/api/email/sync/cache/{message_id}", delete(handlers::delete_cached_email))
+        .route(
+            "/api/email/sync/brokers",
+            get(handlers::get_email_brokers).put(handlers::update_email_brokers),
+        )
+        .route(
+            "/api/email/sync/brokers/reset",
+            post(handlers::reset_email_brokers),
+        )
         .layer(TraceLayer::new_for_http())
         .layer(cors)
         .with_state(state);
