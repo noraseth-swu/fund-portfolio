@@ -1054,3 +1054,33 @@ Database Schema & Aliases (fund_aliases, funds)
    - In the header subtitle ("X records shown (Total: Y.YY THB)"), mask the total amount as `(Total: ****** THB)` when `isPrivacyMode` is true.
 4. **Test Suite:**
    - Update `frontend/src/test/TransactionHistoryPage.test.tsx` to verify masking toggles on and off according to `isPrivacyMode`.
+
+---
+
+### Slice 29: Hierarchical Calendar Zoom-Out (Month/Year Picker) in NavDatePicker (Planned - Pending Execution)
+
+#### 1. Problem Statement & User Experience Goal:
+- Currently, the calendar header in `NavDatePicker.tsx` displays month and year as static text (e.g. `พฤศจิกายน 2026`).
+- Users navigating to past transactions (such as 2024 or 2025) must click the previous month chevron button `<` repeatedly up to 12-24 times.
+- **Requirement:** Allow users to "Zoom Out" by clicking the Month/Year header, switching the view to a Month Grid (12 months) and Year/Decade Grid (e.g. 2020-2031), standardizing this interaction project-wide.
+
+#### 2. Technical Architecture & Scope:
+1. **View State State Machine in `NavDatePicker.tsx`:**
+   - Manage view state: `'days' | 'months' | 'years'`.
+   - Clicking Month/Year title transitions: `'days'` -> `'months'` -> `'years'`.
+2. **Month Selection Grid:**
+   - Renders a 3x4 grid of 12 months with localized names (Thai/English based on i18n).
+   - Selecting a month transitions back to `'days'` view for that month.
+3. **Decade Selection Grid:**
+   - Renders a 3x4 or 4x3 grid of years (current decade, e.g. 2020 - 2031) with `<` and `>` jumping decades (+/- 10 years).
+   - Selecting a year transitions to `'months'` view for that year.
+4. **SEC Trading Day NAV Highlighting Compatibility:**
+   - Dynamic fetching of SEC NAV trading days continues to trigger smoothly whenever the selected month/year is updated in the day view.
+5. **Universal Project-Wide Standardization:**
+   - Because `NavDatePicker` is the single shared component utilized in:
+     - `TransactionModal.tsx` (Single Entry)
+     - `BatchTransactionTable.tsx` (Batch Multi-row Entry)
+     - `TransactionReviewModal.tsx` (Staged Email Review)
+   - Updating `NavDatePicker` directly ensures 100% UI consistency across all entry points.
+6. **Automated Unit Testing:**
+   - Create `frontend/src/test/NavDatePicker.test.tsx` to test the zoom-out flow, month selection, and year switching.

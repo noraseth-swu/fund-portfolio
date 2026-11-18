@@ -356,3 +356,11 @@
 - [ ] 28.3 Header Summary Masking: Mask the aggregated total amount in the header summary text ("X records shown (Total: ****** THB)").
 - [ ] 28.4 Public Data Preservation: Ensure public market quotes (Effective NAV / Unit Price) and Transaction Dates remain visible, adhering to financial UI standards established in Slice 26.
 - [ ] 28.5 Automated Test Verification: Add unit test in `TransactionHistoryPage.test.tsx` verifying masking toggles correctly with `isPrivacyMode`.
+
+## Slice 29: Hierarchical Calendar Zoom-Out (Month/Year Picker) in NavDatePicker (Planned - Pending Execution)
+- [ ] 29.1 Interactive Month/Year Header Button in `NavDatePicker.tsx`: Replace static text span with interactive clickable header toggling between views (`days` -> `months` -> `years`).
+- [ ] 29.2 Month-Selection Grid View: Implement 12-month grid (`ม.ค.` - `ธ.ค.` / `Jan` - `Dec`) allowing instant month jumping without clicking chevron arrows repeatedly.
+- [ ] 29.3 Year/Decade Selection Grid View: Implement 12-year decade grid (e.g. 2020 - 2031) for quick multi-year historical navigation.
+- [ ] 29.4 Trading Day NAV Highlights Retention: Ensure that when returning to the day view from a month/year selection, the SEC NAV trading days are dynamically fetched and highlighted seamlessly.
+- [ ] 29.5 Universal Project-Wide Consistency: Verify that `TransactionModal.tsx` (Single), `BatchTransactionTable.tsx` (Batch), and `TransactionReviewModal.tsx` (Staged) automatically inherit this zoom-out behavior through the shared `NavDatePicker` component.
+- [ ] 29.6 Automated Unit Tests: Add unit tests in `NavDatePicker.test.tsx` testing the zoom-out toggle, month selection, and year navigation.
