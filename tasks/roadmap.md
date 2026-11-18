@@ -144,8 +144,8 @@ flowchart TD
 3. **Milestone 5.3: Automated Daily Daemon & Push Notifications**
    - ตั้งรอบเวลาเบื้องหลัง (Background Worker) รันบน Homelab ดึงราคา NAV สิ้นวันอัตโนมัติช่วงเวลา 20:00 - 22:00 น.
    - แจ้งเตือนสรุปพอร์ตประจำวันผ่าน Cloudflare Tunnel
-4. **Milestone 5.4: Local Privacy Mode (Ollama / OpenThai Integration)**
-   - เพิ่มตัวเลือกใน Settings สลับจากการใช้ Gemini API มาใช้ Local LLM (เช่น OpenThai / Qwen2.5 ผ่าน Ollama) สำหรับผู้ใช้ที่ต้องการประมวลผล Statement บน Homelab โดยไม่ส่งข้อมูลการเงินออกนอกเครือข่ายส่วนตัว
+4. **Milestone 5.4: Local Privacy Mode (Ollama / OpenThai Integration) — *(เลื่อนออกไปก่อน - ยังไม่จำเป็น)***
+   - เพิ่มตัวเลือกใน Settings สลับจากการใช้ Gemini API มาใช้ Local LLM (เช่น OpenThai / Qwen2.5 ผ่าน Ollama) สำหรับผู้ใช้ที่ต้องการประมวลผล Statement บน Homelab โดยไม่ส่งข้อมูลการเงินออกนอกเครือข่ายส่วนตัว (ปัจจุบันยังคงใช้สถาปัตยกรรม Gemini API / Regex ปกติ)
 5. **Milestone 5.5: PWA & Mobile UX Polish**
    - ปรับแต่ง Progressive Web App (PWA) ให้สามารถเปิดใช้งานบนโทรศัพท์มือถือผ่าน Cloudflare Tunnel ได้อย่างปลอดภัยและลื่นไหล
 
