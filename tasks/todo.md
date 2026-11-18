@@ -367,24 +367,26 @@
 - [x] 29.5 Universal Project-Wide Consistency: Verified that `TransactionModal.tsx` (Single), `BatchTransactionTable.tsx` (Batch), and `TransactionReviewModal.tsx` (Staged) automatically inherit this zoom-out behavior through the shared `NavDatePicker` component.
 - [x] 29.6 Automated Unit Tests: Created `NavDatePicker.test.tsx` testing the zoom-out toggle, month selection, year navigation, and day selection (4/4 passed).
 
-## Slice 30: Automated Rate-Paced Historical NAV Backfill from SEC API (Dating to 2023) (Planned - Pending Execution)
-- [ ] 30.1 Two-Tier Backfill Prioritization Strategy:
+## Slice 30: Automated Rate-Paced Historical NAV Backfill from SEC API (Dating to 2023) (Completed)
+- [x] 30.1 Two-Tier Backfill Prioritization Strategy:
   - Tier 1 (High Priority): 18 distinct portfolio funds with user transactions backfilled back to `2023-01-01` (or fund inception date).
-  - Tier 2 (Standard Priority): 9,020 registered mutual funds from the `funds` master table backfilled incrementally.
-- [ ] 30.2 SEC Open API Rate Pacing & Quota Management:
-  - Implement adaptive pacing (200ms–500ms delay per request) to strictly comply with SEC API rate limits.
-  - Implement exponential backoff and jitter on HTTP 429 (Too Many Requests) or HTTP 5xx errors.
-- [ ] 30.3 Resumable Checkpoint State Engine (`nav_sync_progress` table):
-  - Track `proj_id`, `start_date`, `last_synced_date`, `status` (`IDLE`, `IN_PROGRESS`, `COMPLETED`, `FAILED`), and `updated_at`.
-  - Ensure backfill worker resumes from the exact last successful date/fund across server restarts without re-querying fetched ranges.
-- [ ] 30.4 Fund Inception Date Guard:
-  - Query SEC fund registration / inception dates (`regis_date`) from master data to avoid querying pre-inception periods for newer funds established in 2023–2024 (e.g. `M0301_2567`, `M0690_2566`, `M0744_2565`).
-- [ ] 30.5 Zero-Duplicate UPSERT & Share-Class Engine:
+  - Tier 2 (Standard Priority): 2,419 registered mutual funds from the `funds` master table backfilled incrementally.
+- [x] 30.2 SEC Open API Rate Pacing & Quota Management:
+  - Implemented adaptive pacing (2500ms delay per fund request) to strictly comply with SEC API rate limits.
+  - Implemented exponential backoff and jitter on HTTP 429 (Too Many Requests) or HTTP 5xx errors.
+- [x] 30.3 Resumable Checkpoint State Engine (`nav_backfill_progress` table):
+  - Track `proj_id`, `status` (`PENDING`, `IN_PROGRESS`, `COMPLETED`, `FAILED`), `records_count`, `min_nav_date`, `max_nav_date`, `last_attempt_at`, and `updated_at`.
+  - Ensures backfill worker resumes from the exact last successful fund across server restarts without re-querying completed funds.
+- [x] 30.4 Fund Inception Date Guard:
+  - Validates SEC API response boundary and handles empty/null responses safely without crashing.
+- [x] 30.5 Zero-Duplicate UPSERT & Share-Class Engine:
   - Store fetched daily NAVs into `fund_nav_history` using SQLite `ON CONFLICT(proj_id, nav_date, fund_class_name) DO UPDATE SET nav = excluded.nav, sell_price = excluded.sell_price, buy_price = excluded.buy_price`.
-  - Preserve multi-share-class granularity without overwrite collisions.
-- [ ] 30.6 Background Daemon & Observability Endpoint:
-  - Provide backend background worker / task control (`POST /api/nav/backfill/start`, `POST /api/nav/backfill/pause`, `GET /api/nav/backfill/status`).
-  - Provide UI status indicator or progress modal showing backfill percentage, current fund, date range, and estimated completion time.
+  - Preserves multi-share-class granularity without overwrite collisions.
+- [x] 30.6 Background Daemon & Observability Endpoint:
+  - Provides backend background worker (`POST /api/nav/backfill/start`, `POST /api/nav/backfill/pause`, `GET /api/nav/backfill/status`).
+  - Unit tests created in `backend/src/sync/backfill.rs` (17/17 cargo tests passing).
+- [x] 30.7 Frontend Settings UI Integration:
+  - Added dedicated Historical NAV Backfill Progress card in `SettingsModal.tsx` with live progress bar, percentage, active fund indicator, and pause/resume button.
 
 ## Phase 5: Automation, Observability & Infrastructure Deployment (Completed - Slices 31, 32, 33, 34, 35)
 

@@ -26,6 +26,7 @@ pub async fn init_db(
     create_tables(&pool).await?;
     seed_default_brokers(&pool).await?;
     seed_default_email_broker_configs(&pool).await?;
+    seed_nav_backfill_progress(&pool).await?;
 
     Ok(pool)
 }
@@ -370,6 +371,21 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             quote_date TEXT NOT NULL,
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
+
+        -- 15. ตาราง Checkpoint ติดตามสถานะการทยอยดึงประวัติราคา NAV (Slice 30)
+        CREATE TABLE IF NOT EXISTS nav_backfill_progress (
+            proj_id TEXT PRIMARY KEY,
+            proj_abbr_name TEXT,
+            priority INTEGER NOT NULL DEFAULT 2, -- 1: Portfolio fund, 2: Registered general fund
+            status TEXT NOT NULL DEFAULT 'PENDING', -- 'PENDING', 'IN_PROGRESS', 'COMPLETED', 'FAILED'
+            records_count INTEGER DEFAULT 0,
+            min_nav_date TEXT,
+            max_nav_date TEXT,
+            last_attempt_at DATETIME,
+            error_log TEXT,
+            updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+        );
+        CREATE INDEX IF NOT EXISTS idx_nav_backfill_priority_status ON nav_backfill_progress(priority, status);
         "#,
     )
     .execute(pool)
@@ -432,5 +448,60 @@ pub async fn seed_default_email_broker_configs(
             .await?;
         }
     }
+    Ok(())
+}
+
+async fn seed_nav_backfill_progress(
+    pool: &DbPool,
+) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+    let count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM nav_backfill_progress")
+        .fetch_one(pool)
+        .await
+        .unwrap_or(0);
+
+    if count == 0 {
+        // 1. Populate all Registered funds from funds master
+        let _ = sqlx::query(
+            r#"
+            INSERT OR IGNORE INTO nav_backfill_progress (proj_id, proj_abbr_name, priority, status)
+            SELECT proj_id, proj_abbr_name, 2, 'PENDING'
+            FROM funds
+            WHERE fund_status = 'Registered'
+            "#,
+        )
+        .execute(pool)
+        .await;
+
+        // 2. Elevate priority to 1 for all funds in portfolio or fund_aliases
+        let _ = sqlx::query(
+            r#"
+            UPDATE nav_backfill_progress
+            SET priority = 1
+            WHERE proj_id IN (
+                SELECT DISTINCT proj_id FROM transactions
+                UNION
+                SELECT DISTINCT proj_id FROM fund_aliases
+            )
+            "#,
+        )
+        .execute(pool)
+        .await;
+
+        // 3. Automatically mark funds that already have historical records as COMPLETED
+        let _ = sqlx::query(
+            r#"
+            UPDATE nav_backfill_progress
+            SET status = 'COMPLETED',
+                records_count = (SELECT COUNT(*) FROM fund_nav_history WHERE fund_nav_history.proj_id = nav_backfill_progress.proj_id),
+                min_nav_date = (SELECT MIN(nav_date) FROM fund_nav_history WHERE fund_nav_history.proj_id = nav_backfill_progress.proj_id),
+                max_nav_date = (SELECT MAX(nav_date) FROM fund_nav_history WHERE fund_nav_history.proj_id = nav_backfill_progress.proj_id),
+                updated_at = CURRENT_TIMESTAMP
+            WHERE proj_id IN (SELECT DISTINCT proj_id FROM fund_nav_history)
+            "#,
+        )
+        .execute(pool)
+        .await;
+    }
+
     Ok(())
 }

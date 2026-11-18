@@ -1086,7 +1086,7 @@ Database Schema & Aliases (fund_aliases, funds)
 
 ---
 
-### Slice 30: Automated Rate-Paced Historical NAV Backfill from SEC API (Dating to 2023) (Planned - Pending Execution)
+### Slice 30: Automated Rate-Paced Historical NAV Backfill from SEC API (Dating to 2023) (Completed)
 
 #### 1. Problem Statement & Motivation:
 - **Comprehensive Portfolio Analytics:** Calculating precise performance metrics (XIRR, historical daily valuations, portfolio drawdown, benchmark comparisons against SET/S&P 500) requires continuous daily historical NAV data from 2023-01-01 to present.

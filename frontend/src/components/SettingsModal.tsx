@@ -14,6 +14,10 @@ import {
   RotateCw,
   Building2,
   RotateCcw,
+  Play,
+  Pause,
+  Database,
+  Activity,
 } from 'lucide-react';
 import {
   getUserSettings,
@@ -84,6 +88,21 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   const [showPassword, setShowPassword] = useState(false);
   const [statusMessage, setStatusMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
   const [brokerConfigs, setBrokerConfigs] = useState<EmailBrokerConfig[]>([]);
+
+  // Historical NAV Backfill State (Slice 30)
+  interface BackfillStatus {
+    is_running: boolean;
+    total_funds: number;
+    completed_funds: number;
+    pending_funds: number;
+    failed_funds: number;
+    current_proj_id: string | null;
+    current_proj_abbr: string | null;
+    percent_completed: number;
+    last_updated_at: string | null;
+  }
+  const [backfillStatus, setBackfillStatus] = useState<BackfillStatus | null>(null);
+  const [backfillLoading, setBackfillLoading] = useState(false);
   const [resettingBrokers, setResettingBrokers] = useState(false);
 
   // Load user settings on modal open
@@ -121,6 +140,49 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
     };
     fetchSettings();
   }, [isOpen]);
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const fetchBackfill = async () => {
+      try {
+        const res = await fetch('/api/nav/backfill/status');
+        if (res.ok) {
+          const data = await res.json();
+          setBackfillStatus(data);
+        }
+      } catch (_err) {
+        // Safe catch for test environments
+      }
+    };
+    fetchBackfill();
+    const interval = setInterval(fetchBackfill, 3000);
+    return () => clearInterval(interval);
+  }, [isOpen]);
+
+  const handleToggleBackfill = async () => {
+    if (!backfillStatus) return;
+    setBackfillLoading(true);
+    try {
+      const endpoint = backfillStatus.is_running
+        ? '/api/nav/backfill/pause'
+        : '/api/nav/backfill/start';
+      await fetch(endpoint, { method: 'POST' });
+      const res = await fetch('/api/nav/backfill/status');
+      if (res.ok) {
+        const data = await res.json();
+        setBackfillStatus(data);
+        toast.success(
+          data.is_running
+            ? 'เริ่มการทยอยดึงประวัติราคา NAV เรียบร้อยแล้ว'
+            : 'พักการดึงประวัติราคา NAV ชั่วคราว'
+        );
+      }
+    } catch (err: any) {
+      toast.error(err.message || 'Error toggling backfill');
+    } finally {
+      setBackfillLoading(false);
+    }
+  };
 
   if (!isOpen) return null;
 
@@ -589,6 +651,91 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 </div>
               ))}
             </div>
+          </div>
+
+          {/* Section 2.5: Historical NAV Backfill Progress & Controls (Slice 30) */}
+          <div className="bg-slate-50 dark:bg-slate-800/40 border border-slate-200 dark:border-slate-800 rounded-xl p-5 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-center gap-2">
+                <Database className="w-4 h-4 text-emerald-500" />
+                <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
+                  การทยอยดึงประวัติราคา NAV ย้อนหลัง (SEC API)
+                </h3>
+              </div>
+              {backfillStatus && (
+                <div className="flex items-center gap-2">
+                  <span
+                    className={`inline-flex items-center gap-1.5 px-2.5 py-0.5 rounded-full text-xs font-semibold ${
+                      backfillStatus.is_running
+                        ? 'bg-emerald-50 dark:bg-emerald-950/60 text-emerald-700 dark:text-emerald-300 border border-emerald-300 dark:border-emerald-800'
+                        : 'bg-amber-50 dark:bg-amber-950/60 text-amber-700 dark:text-amber-300 border border-amber-300 dark:border-amber-800'
+                    }`}
+                  >
+                    <span
+                      className={`w-2 h-2 rounded-full ${
+                        backfillStatus.is_running
+                          ? 'bg-emerald-500 animate-pulse'
+                          : 'bg-amber-500'
+                      }`}
+                    />
+                    {backfillStatus.is_running ? 'กำลังทำงานเบื้องหลัง' : 'พักชั่วคราว'}
+                  </span>
+                  <button
+                    type="button"
+                    onClick={handleToggleBackfill}
+                    disabled={backfillLoading}
+                    className={`px-3 py-1 text-xs rounded-lg font-semibold flex items-center gap-1.5 transition cursor-pointer ${
+                      backfillStatus.is_running
+                        ? 'bg-amber-100 hover:bg-amber-200 dark:bg-amber-900/40 dark:hover:bg-amber-900/60 text-amber-800 dark:text-amber-200'
+                        : 'bg-emerald-600 hover:bg-emerald-500 text-white shadow-sm'
+                    }`}
+                  >
+                    {backfillStatus.is_running ? (
+                      <>
+                        <Pause className="w-3.5 h-3.5" />
+                        <span>พักการดึง</span>
+                      </>
+                    ) : (
+                      <>
+                        <Play className="w-3.5 h-3.5" />
+                        <span>เริ่มทยอยดึงต่อ</span>
+                      </>
+                    )}
+                  </button>
+                </div>
+              )}
+            </div>
+
+            {backfillStatus && (
+              <div className="space-y-2">
+                <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
+                  <span>
+                    ความคืบหน้า: <strong className="text-slate-900 dark:text-white">{backfillStatus.completed_funds.toLocaleString()}</strong> จาก{' '}
+                    {backfillStatus.total_funds.toLocaleString()} กองทุน
+                  </span>
+                  <span className="font-bold text-emerald-600 dark:text-emerald-400">
+                    {backfillStatus.percent_completed.toFixed(1)}%
+                  </span>
+                </div>
+
+                <div className="w-full bg-slate-200 dark:bg-slate-700 h-2.5 rounded-full overflow-hidden">
+                  <div
+                    className="bg-emerald-500 h-2.5 rounded-full transition-all duration-500"
+                    style={{ width: `${Math.min(100, Math.max(0, backfillStatus.percent_completed))}%` }}
+                  />
+                </div>
+
+                {backfillStatus.is_running && backfillStatus.current_proj_id && (
+                  <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 pt-1">
+                    <Activity className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
+                    <span>กำลังประมวลผล:</span>
+                    <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
+                      {backfillStatus.current_proj_abbr || backfillStatus.current_proj_id} ({backfillStatus.current_proj_id})
+                    </span>
+                  </p>
+                )}
+              </div>
+            )}
           </div>
 
           {/* Section 3: Live Sync Summary if executed */}

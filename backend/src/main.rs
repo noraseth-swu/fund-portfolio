@@ -107,6 +107,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     let shared_pool = Arc::new(pool.clone());
     SyncService::start_background_worker(shared_pool.clone(), api_key.clone());
     DailyNavScheduler::start(shared_pool.clone(), api_key.clone());
+    crate::sync::BackfillService::start_background_worker(pool.clone(), api_key.clone());
 
     // 4. Create Axum Router & App State
     let gemini_api_key = env::var("GEMINI_API_KEY").unwrap_or_default();

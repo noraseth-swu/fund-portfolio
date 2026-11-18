@@ -1772,3 +1772,34 @@ pub async fn get_cron_status(
         "last_run": last_run
     }))
 }
+
+/// GET /api/nav/backfill/status (ตรวจสอบความคืบหน้าการดึงประวัติราคา NAV ย้อนหลัง - Slice 30)
+pub async fn get_nav_backfill_status(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    match crate::sync::BackfillService::get_status(&state.pool).await {
+        Ok(status) => (StatusCode::OK, Json(serde_json::to_value(status).unwrap_or_default())),
+        Err(e) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            Json(serde_json::json!({ "error": e.to_string() })),
+        ),
+    }
+}
+
+/// POST /api/nav/backfill/start (สั่งเริ่มหรือกลับมาดึงประวัติราคา NAV ต่อ - Slice 30)
+pub async fn start_nav_backfill() -> impl IntoResponse {
+    crate::sync::BackfillService::resume();
+    Json(serde_json::json!({
+        "status": "ok",
+        "message": "Historical NAV backfill service resumed"
+    }))
+}
+
+/// POST /api/nav/backfill/pause (สั่งพักการดึงประวัติราคา NAV ชั่วคราว - Slice 30)
+pub async fn pause_nav_backfill() -> impl IntoResponse {
+    crate::sync::BackfillService::pause();
+    Json(serde_json::json!({
+        "status": "ok",
+        "message": "Historical NAV backfill service paused"
+    }))
+}
