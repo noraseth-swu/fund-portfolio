@@ -1037,53 +1037,52 @@ Database Schema & Aliases (fund_aliases, funds)
 
 ---
 
-### Slice 28: Transaction History Page Privacy Mode Masking (Planned - Pending Execution)
+### Slice 28: Transaction History Page Privacy Mode Masking (Completed)
 
 #### 1. Problem Statement:
 - The Privacy Mode toggle currently masks sensitive values on the Dashboard (`HoldingsTable` and `PortfolioSummaryCard`).
-- However, when the user navigates to the **Transaction History Page** (`TransactionHistoryPage.tsx`), all units, transaction amounts, fees, and the header summary total remain unmasked in plain text because `isPrivacyMode` is not yet passed to `TransactionHistoryPage`.
+- However, when the user navigates to the **Transaction History Page** (`TransactionHistoryPage.tsx`), all units, transaction amounts, fees, and the header summary total remained unmasked in plain text.
 
-#### 2. Scope & Implementation Plan (To be executed when instructed):
-1. **Prop Threading:** Pass `isPrivacyMode` from `App.tsx` into `TransactionHistoryPage.tsx`.
+#### 2. Scope & Implementation:
+1. **Prop Threading:** Passed `isPrivacyMode` from `App.tsx` into `TransactionHistoryPage.tsx`.
 2. **Column Masking:**
-   - Mask `units` with `******`.
-   - Mask `total_amount` (both THB and foreign currency) with `******`.
-   - Mask `fee` with `******`.
-   - Preserve public market quote `unit_price` (Effective NAV) and `trans_date` (consistent with financial UI standards established in Slice 26).
-3. **Header Summary Masking:**
-   - In the header subtitle ("X records shown (Total: Y.YY THB)"), mask the total amount as `(Total: ****** THB)` when `isPrivacyMode` is true.
-4. **Test Suite:**
-   - Update `frontend/src/test/TransactionHistoryPage.test.tsx` to verify masking toggles on and off according to `isPrivacyMode`.
+   - Masked `units` with `******`.
+   - Masked `total_amount` (both THB and foreign currency) with `******`.
+   - Masked `fee` with `******`.
+   - Preserved public market quote `unit_price` (Effective NAV) and `trans_date` (consistent with financial UI standards established in Slice 26).
+   - Masked table footer net invested and total fee amounts.
+   - Masked real-time summary grand total cards (Buy, Sell, Net, Fee).
+3. **Header Summary & Bulk Bar Masking:**
+   - In the header subtitle ("X records shown (Total: ****** THB)"), masked the total amount when `isPrivacyMode` is true.
+   - Masked selected total amount in the bulk action bar.
+4. **Test Suite & Verification:**
+   - Updated `frontend/src/test/TransactionHistoryPage.test.tsx` verifying masking toggles correctly with `isPrivacyMode` (4/4 tests passed).
 
 ---
 
-### Slice 29: Hierarchical Calendar Zoom-Out (Month/Year Picker) in NavDatePicker (Planned - Pending Execution)
+### Slice 29: Hierarchical Calendar Zoom-Out (Month/Year Picker) in NavDatePicker (Completed)
 
 #### 1. Problem Statement & User Experience Goal:
-- Currently, the calendar header in `NavDatePicker.tsx` displays month and year as static text (e.g. `พฤศจิกายน 2026`).
-- Users navigating to past transactions (such as 2024 or 2025) must click the previous month chevron button `<` repeatedly up to 12-24 times.
-- **Requirement:** Allow users to "Zoom Out" by clicking the Month/Year header, switching the view to a Month Grid (12 months) and Year/Decade Grid (e.g. 2020-2031), standardizing this interaction project-wide.
+- Previously, the calendar header in `NavDatePicker.tsx` displayed month and year as static text (e.g. `พฤศจิกายน 2026`).
+- Users navigating to past transactions (such as 2024 or 2025) had to click the previous month chevron button `<` repeatedly up to 12-24 times.
+- **Goal:** Allow users to "Zoom Out" by clicking the Month/Year header, switching the view to a Month Grid (12 months) and Year/Decade Grid (e.g. 2020-2031 / 2563-2574 in Thai Buddhist Era), standardizing this interaction project-wide.
 
 #### 2. Technical Architecture & Scope:
 1. **View State State Machine in `NavDatePicker.tsx`:**
-   - Manage view state: `'days' | 'months' | 'years'`.
+   - Managed view state: `'days' | 'months' | 'years'`.
    - Clicking Month/Year title transitions: `'days'` -> `'months'` -> `'years'`.
 2. **Month Selection Grid:**
-   - Renders a 3x4 grid of 12 months with localized names (Thai/English based on i18n).
+   - Renders a 3x4 grid of 12 months with localized names (Thai `ม.ค.` - `ธ.ค.` / English `Jan` - `Dec`).
    - Selecting a month transitions back to `'days'` view for that month.
 3. **Decade Selection Grid:**
-   - Renders a 3x4 or 4x3 grid of years (current decade, e.g. 2020 - 2031) with `<` and `>` jumping decades (+/- 10 years).
+   - Renders a 3x4 grid of 12 years (current decade, e.g. 2020 - 2031 / 2563 - 2574) with `<` and `>` jumping decades (+/- 10 years).
    - Selecting a year transitions to `'months'` view for that year.
 4. **SEC Trading Day NAV Highlighting Compatibility:**
    - Dynamic fetching of SEC NAV trading days continues to trigger smoothly whenever the selected month/year is updated in the day view.
 5. **Universal Project-Wide Standardization:**
-   - Because `NavDatePicker` is the single shared component utilized in:
-     - `TransactionModal.tsx` (Single Entry)
-     - `BatchTransactionTable.tsx` (Batch Multi-row Entry)
-     - `TransactionReviewModal.tsx` (Staged Email Review)
-   - Updating `NavDatePicker` directly ensures 100% UI consistency across all entry points.
+   - Because `NavDatePicker` is the single shared component utilized in `TransactionModal.tsx` (Single Entry), `BatchTransactionTable.tsx` (Batch Multi-row Entry), and `TransactionReviewModal.tsx` (Staged Email Review), all entry points automatically inherited this zoom-out behavior.
 6. **Automated Unit Testing:**
-   - Create `frontend/src/test/NavDatePicker.test.tsx` to test the zoom-out flow, month selection, and year switching.
+   - Created `frontend/src/test/NavDatePicker.test.tsx` verifying zoom-out toggle, month selection, decade navigation, and day selection (4/4 passed). Full frontend test suite: 12 files, 48/48 tests passed.
 
 ---
 
