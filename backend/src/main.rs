@@ -24,7 +24,12 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 0. Sentry Observability & Error Monitoring (Optional - GitHub Student Developer Pack)
     let sentry_dsn = env::var("SENTRY_DSN").unwrap_or_default();
     let _sentry_guard = if !sentry_dsn.trim().is_empty() && sentry_dsn.starts_with("http") {
-        let env_name = env::var("SENTRY_ENVIRONMENT").unwrap_or_else(|_| "production".into());
+        let env_name = env::var("SENTRY_ENVIRONMENT")
+            .unwrap_or_else(|_| "production".into())
+            .trim()
+            .trim_matches('"')
+            .trim_matches('\'')
+            .to_string();
         let mut options = sentry::ClientOptions::default();
         options.release = sentry::release_name!();
         options.environment = Some(env_name.into());

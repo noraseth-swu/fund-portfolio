@@ -1729,6 +1729,12 @@ pub async fn batch_delete_pending(
 
 /// GET /api/debug/sentry-test
 pub async fn sentry_test_trigger() -> impl IntoResponse {
+    let env_name = std::env::var("SENTRY_ENVIRONMENT")
+        .unwrap_or_else(|_| "production".into())
+        .trim()
+        .trim_matches('"')
+        .trim_matches('\'')
+        .to_string();
     let event_id = sentry::capture_message(
         "Manual Sentry Verification Test from Fund Portfolio API",
         sentry::Level::Warning,
@@ -1736,6 +1742,7 @@ pub async fn sentry_test_trigger() -> impl IntoResponse {
     Json(serde_json::json!({
         "status": "ok",
         "message": "Sentry verification event captured successfully",
+        "environment": env_name,
         "event_id": event_id.to_string()
     }))
 }
