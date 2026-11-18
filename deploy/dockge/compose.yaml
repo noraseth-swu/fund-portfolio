@@ -1,0 +1,62 @@
+# ==============================================================================
+# Dockge Compose Stack: fund-portfolio
+# Personal Multi-Asset Portfolio Tracker (Thai Mutual Funds & US Stocks)
+# Production Homelab Deployment with Cloudflare Tunnel (Zero Trust) Ingress
+# ==============================================================================
+
+services:
+  backend:
+    image: ghcr.io/noraseth-swu/fund-portfolio-backend:latest
+    container_name: fund-portfolio-backend
+    restart: unless-stopped
+    environment:
+      - SERVER_PORT=8088
+      - DATABASE_URL=sqlite:/app/data/portfolio.db
+      - SEC_API_KEY=${SEC_API_KEY:-}
+      - GEMINI_API_KEY=${GEMINI_API_KEY:-}
+      - SENTRY_DSN=${SENTRY_DSN:-}
+      - SENTRY_ENVIRONMENT=${SENTRY_ENVIRONMENT:-production}
+      - DAILY_NAV_SYNC_ENABLED=${DAILY_NAV_SYNC_ENABLED:-true}
+      - DAILY_NAV_SYNC_HOUR=${DAILY_NAV_SYNC_HOUR:-20}
+      - DAILY_NAV_SYNC_MINUTE=${DAILY_NAV_SYNC_MINUTE:-30}
+      - STATEMENT_DEFAULT_PASSWORD=${STATEMENT_DEFAULT_PASSWORD:-}
+    volumes:
+      - ./data:/app/data
+    networks:
+      - internal-net
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8088/api/health"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 10s
+
+  web:
+    image: ghcr.io/noraseth-swu/fund-portfolio-web:latest
+    container_name: fund-portfolio-web
+    restart: unless-stopped
+    depends_on:
+      backend:
+        condition: service_healthy
+    # Optional: uncomment ports if you also wish to access directly via Homelab local IP (e.g. http://192.168.1.x:8080)
+    # ports:
+    #   - "${LOCAL_WEB_PORT:-8080}:80"
+    networks:
+      - internal-net
+      - cloudflare-tunnel-net
+    healthcheck:
+      test: ["CMD", "wget", "-qO-", "http://localhost:80/"]
+      interval: 30s
+      timeout: 5s
+      retries: 3
+      start_period: 5s
+
+networks:
+  internal-net:
+    driver: bridge
+
+  # Connect to your existing Homelab Cloudflare Tunnel Docker Network
+  # (Change HOMELAB_TUNNEL_NETWORK in .env if your tunnel uses a different network name, e.g. 'homelab_network' or 'proxy-net')
+  cloudflare-tunnel-net:
+    external: true
+    name: ${HOMELAB_TUNNEL_NETWORK:-homelab-network}

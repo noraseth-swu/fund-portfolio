@@ -386,7 +386,7 @@
   - Provide backend background worker / task control (`POST /api/nav/backfill/start`, `POST /api/nav/backfill/pause`, `GET /api/nav/backfill/status`).
   - Provide UI status indicator or progress modal showing backfill percentage, current fund, date range, and estimated completion time.
 
-## Phase 5: Automation, Observability & Infrastructure Deployment (In Progress - Slice 35 Planned)
+## Phase 5: Automation, Observability & Infrastructure Deployment (Completed - Slices 31, 32, 33, 34, 35)
 
 ### Slice 31: Production Observability & Error Monitoring (Sentry Full-Stack Integration - Milestone 5.1)
 - [x] 31.1 Sentry Configuration & Environment Schema:
@@ -448,20 +448,20 @@
   - Verify zero layout breaking or horizontal scrolling down to 360px viewport width.
 
 ### Slice 35: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Milestone 5.6)
-- [ ] 35.1 Multi-Stage Production Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`):
+- [x] 35.1 Multi-Stage Production Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`):
   - Multi-stage build for Rust Actix backend using `cargo-chef` for layer caching, creating minimal `debian:bookworm-slim` image with non-root `appuser`.
   - Multi-stage build for Vite React frontend + `nginx:alpine` gateway configured for SPA routing (`try_files`), reverse proxy to `/api/`, and unbuffered SSE live logs.
   - Container health checks (`HEALTHCHECK CMD curl -f http://localhost:8088/api/health || exit 1`).
-- [ ] 35.2 Automated GitHub Actions CI/CD to GHCR (`.github/workflows/docker-publish.yml`):
+- [x] 35.2 Automated GitHub Actions CI/CD to GHCR (`.github/workflows/docker-publish.yml`):
   - Workflow to build and push multi-architecture containers to GitHub Container Registry (`ghcr.io/noraseth-swu/fund-portfolio-backend:latest` and `fund-portfolio-web:latest`).
   - GitHub token permissions and caching strategy for swift automated image publication.
-- [ ] 35.3 Dockge-Native Compose Stack & Network Integration (`deploy/dockge/compose.yaml`):
+- [x] 35.3 Dockge-Native Compose Stack & Network Integration (`deploy/dockge/compose.yaml`):
   - Stack definition pulling GHCR images, configuring environment variables, and mapping persistent data directory `./data:/app/data`.
   - External network integration to attach to existing Homelab Cloudflare Tunnel Docker network (zero duplicate `cloudflared` daemon).
-- [ ] 35.4 SQLite Persistence, Safe File Permissions & Automated Backup Routine:
+- [x] 35.4 SQLite Persistence, Safe File Permissions & Automated Backup Routine:
   - Persistent storage structure for `portfolio.db` and encrypted statements.
   - Automated SQLite backup script (`deploy/scripts/backup-db.sh` & `.ps1`) utilizing `.backup` with 30-day retention rotation before daily 20:30 NAV sync.
-- [ ] 35.5 Homelab & Dockge Deployment Runbook (`docs/homelab-deployment.md`):
+- [x] 35.5 Homelab & Dockge Deployment Runbook (`docs/homelab-deployment.md`):
   - Complete guide for Dockge stack creation, `.env` template, and Cloudflare Zero Trust Dashboard Public Hostname mapping + Access OTP/SSO policy.
 
 
