@@ -1084,3 +1084,122 @@ Database Schema & Aliases (fund_aliases, funds)
    - Updating `NavDatePicker` directly ensures 100% UI consistency across all entry points.
 6. **Automated Unit Testing:**
    - Create `frontend/src/test/NavDatePicker.test.tsx` to test the zoom-out flow, month selection, and year switching.
+
+---
+
+### Slice 30: Automated Rate-Paced Historical NAV Backfill from SEC API (Dating to 2023) (Planned - Pending Execution)
+
+#### 1. Problem Statement & Motivation:
+- **Comprehensive Portfolio Analytics:** Calculating precise performance metrics (XIRR, historical daily valuations, portfolio drawdown, benchmark comparisons against SET/S&P 500) requires continuous daily historical NAV data from 2023-01-01 to present.
+- **Current Database Status:**
+  - `fund_nav_history` holds 98,417 rows across 35 distinct funds.
+  - Across active user transactions, there are 18 distinct mutual funds.
+  - While major portfolio funds have extensive history, newer funds or newly registered share-classes lack backfilled trading days between their inception date and 2026.
+  - The universe master table `funds` contains 9,020 mutual funds registered in Thailand.
+- **Constraints & Challenges:**
+  - Requesting historical NAV for 9,020 funds over 3+ years directly in a loop would exceed SEC Open API rate limits and trigger HTTP 429 errors or IP blocking.
+  - An unmanaged or memory-bound backfill would lock the SQLite database or crash during app restarts.
+  - The process must be **incremental, rate-paced, interruptible, and fully resumable**.
+
+#### 2. Architecture & Technical Design:
+
+```
++-------------------------------------------------------------------------------+
+|                       Slice 30 Architecture Diagram                           |
++-------------------------------------------------------------------------------+
+
+  [Background Task / Cron]
+             |
+             v
+  +----------------------+      Queries Next Batch      +----------------------+
+  | Backfill Coordinator | --------------------------> | `nav_sync_progress`  |
+  +----------------------+                             | (Checkpoint State)   |
+             |                                         +----------------------+
+             | 1. Prioritize Tier 1 (18 Portfolio Funds)
+             | 2. Follow with Tier 2 (Universe Funds)
+             v
+  +----------------------+      Rate-Limited Pacing     +----------------------+
+  |   Rate Limiter &     | --------------------------> |     SEC Open API     |
+  | Backoff Engine       | <-------------------------- |  Daily NAV Endpoint  |
+  +----------------------+   HTTP 200 / 429 Adaptive   +----------------------+
+             |
+             | Parse & Validate Multi-Share Classes
+             v
+  +----------------------+      Atomic UPSERT (Batch)   +----------------------+
+  | Database Repository  | --------------------------> |  `fund_nav_history`  |
+  +----------------------+                             +----------------------+
+             |
+             | Update last_synced_date
+             v
+  +----------------------+
+  | `nav_sync_progress`  |
+  +----------------------+
+```
+
+1. **Two-Tier Prioritization Strategy:**
+   - **Tier 1 (High Priority - Portfolio Funds):**
+     - Target the 18 distinct mutual funds currently held in user portfolios (`transactions` and `pending_transactions`).
+     - Backfill range: `2023-01-01` (or fund inception date `regis_date`, whichever is later) to current date.
+     - Fast-tracks portfolio analytics and historical charting capabilities immediately.
+   - **Tier 2 (Standard Priority - Universe Funds):**
+     - Target the remaining 9,000+ registered funds in `funds` master table.
+     - Run gradually in background with polite request spacing during idle hours.
+
+2. **Adaptive Rate Limiter & Backoff Engine:**
+   - Enforce an inter-request delay (e.g. 250ms–500ms between calls).
+   - On HTTP 429 (Rate Limit Exceeded) or 503/504 errors:
+     - Apply exponential backoff with random jitter (e.g., pause 5s, 15s, 45s, up to 120s).
+     - Log rate-limit events clearly in the console / log output.
+
+3. **Resumable Checkpoint State Engine (`nav_sync_progress` table):**
+   ```sql
+   CREATE TABLE IF NOT EXISTS nav_sync_progress (
+       proj_id TEXT PRIMARY KEY,
+       tier INTEGER NOT NULL DEFAULT 2, -- 1: Portfolio, 2: Universe
+       start_date TEXT NOT NULL,         -- '2023-01-01' or regis_date
+       last_synced_date TEXT,            -- Last completed date YYYY-MM-DD
+       status TEXT NOT NULL DEFAULT 'IDLE', -- IDLE, IN_PROGRESS, COMPLETED, FAILED
+       retry_count INTEGER NOT NULL DEFAULT 0,
+       error_message TEXT,
+       updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
+   );
+   ```
+   - Before fetching, worker queries the earliest uncompleted fund and resumes from `last_synced_date`.
+   - On interruption or restart, progress is never lost.
+
+4. **Fund Inception Date Guard:**
+   - Look up `regis_date` from `funds` or SEC project metadata.
+   - If a fund was registered after 2023-01-01 (e.g. `M0301_2567` launched in April 2024), set `start_date = regis_date` to prevent sending futile queries for non-existent historical dates.
+
+5. **Zero-Duplicate UPSERT & Multi-Share Class Storage:**
+   - Ingest into `fund_nav_history` using SQLite UPSERT:
+     ```sql
+     INSERT INTO fund_nav_history (proj_id, nav_date, fund_class_name, nav, sell_price, buy_price, updated_at)
+     VALUES (?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+     ON CONFLICT(proj_id, nav_date, fund_class_name) DO UPDATE SET
+         nav = excluded.nav,
+         sell_price = excluded.sell_price,
+         buy_price = excluded.buy_price,
+         updated_at = CURRENT_TIMESTAMP;
+     ```
+   - Retain complete granularity for E-class, SSF, RMF, and dividend/accumulation share classes.
+
+6. **Observability & REST Endpoints:**
+   - `GET /api/nav/backfill/status` -> Returns overall progress:
+     ```json
+     {
+       "tier1": { "total_funds": 18, "completed": 15, "in_progress": 1 },
+       "tier2": { "total_funds": 9020, "completed": 450, "in_progress": 0 },
+       "current_fund": "SCBS&P500E (M0643_2555)",
+       "current_date": "2024-06-15",
+       "is_running": true
+     }
+     ```
+   - `POST /api/nav/backfill/start` -> Start/resume background task.
+   - `POST /api/nav/backfill/pause` -> Gracefully pause background task.
+
+#### 3. Verification & Safety Plan:
+- Unit test rate limiter timing and backoff logic.
+- Verify resumption after simulated crash or worker kill.
+- Verify zero duplicate rows or primary key constraint violations in `fund_nav_history`.
+- Verify total database size and performance under SQLite WAL mode.

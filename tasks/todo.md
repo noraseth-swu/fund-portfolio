@@ -364,3 +364,23 @@
 - [ ] 29.4 Trading Day NAV Highlights Retention: Ensure that when returning to the day view from a month/year selection, the SEC NAV trading days are dynamically fetched and highlighted seamlessly.
 - [ ] 29.5 Universal Project-Wide Consistency: Verify that `TransactionModal.tsx` (Single), `BatchTransactionTable.tsx` (Batch), and `TransactionReviewModal.tsx` (Staged) automatically inherit this zoom-out behavior through the shared `NavDatePicker` component.
 - [ ] 29.6 Automated Unit Tests: Add unit tests in `NavDatePicker.test.tsx` testing the zoom-out toggle, month selection, and year navigation.
+
+## Slice 30: Automated Rate-Paced Historical NAV Backfill from SEC API (Dating to 2023) (Planned - Pending Execution)
+- [ ] 30.1 Two-Tier Backfill Prioritization Strategy:
+  - Tier 1 (High Priority): 18 distinct portfolio funds with user transactions backfilled back to `2023-01-01` (or fund inception date).
+  - Tier 2 (Standard Priority): 9,020 registered mutual funds from the `funds` master table backfilled incrementally.
+- [ ] 30.2 SEC Open API Rate Pacing & Quota Management:
+  - Implement adaptive pacing (200ms–500ms delay per request) to strictly comply with SEC API rate limits.
+  - Implement exponential backoff and jitter on HTTP 429 (Too Many Requests) or HTTP 5xx errors.
+- [ ] 30.3 Resumable Checkpoint State Engine (`nav_sync_progress` table):
+  - Track `proj_id`, `start_date`, `last_synced_date`, `status` (`IDLE`, `IN_PROGRESS`, `COMPLETED`, `FAILED`), and `updated_at`.
+  - Ensure backfill worker resumes from the exact last successful date/fund across server restarts without re-querying fetched ranges.
+- [ ] 30.4 Fund Inception Date Guard:
+  - Query SEC fund registration / inception dates (`regis_date`) from master data to avoid querying pre-inception periods for newer funds established in 2023–2024 (e.g. `M0301_2567`, `M0690_2566`, `M0744_2565`).
+- [ ] 30.5 Zero-Duplicate UPSERT & Share-Class Engine:
+  - Store fetched daily NAVs into `fund_nav_history` using SQLite `ON CONFLICT(proj_id, nav_date, fund_class_name) DO UPDATE SET nav = excluded.nav, sell_price = excluded.sell_price, buy_price = excluded.buy_price`.
+  - Preserve multi-share-class granularity without overwrite collisions.
+- [ ] 30.6 Background Daemon & Observability Endpoint:
+  - Provide backend background worker / task control (`POST /api/nav/backfill/start`, `POST /api/nav/backfill/pause`, `GET /api/nav/backfill/status`).
+  - Provide UI status indicator or progress modal showing backfill percentage, current fund, date range, and estimated completion time.
+
