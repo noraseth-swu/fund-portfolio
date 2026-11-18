@@ -346,3 +346,13 @@
 - [x] 27.5 GitHub Actions CI Workflow Setup: Created `.github/workflows/ci.yml` with automated quality gates (`cargo test`, `npm test`, `npm run build`).
 - [x] 27.6 Safe Push & Remote Verification: Pushed `main` to `origin/main` successfully.
 - [x] 27.7 Anti-Slop Audit Report: Completed both DURING and AFTER checks with zero violations, documented in `anti-slop/audit-001-2026-11-16.md`.
+
+## Slice 28: Transaction History Page Privacy Mode Masking (Planned - Pending Execution)
+- [ ] 28.1 Prop Threading in App.tsx: Pass `isPrivacyMode` state from `App.tsx` down to `TransactionHistoryPage.tsx`.
+- [ ] 28.2 Column Data Masking: In `TransactionHistoryPage.tsx`, mask sensitive personal financial columns with `******` when `isPrivacyMode` is true:
+  - Units (`units`)
+  - Total Amount (`total_amount` in THB and foreign currency)
+  - Brokerage Fee (`fee`)
+- [ ] 28.3 Header Summary Masking: Mask the aggregated total amount in the header summary text ("X records shown (Total: ****** THB)").
+- [ ] 28.4 Public Data Preservation: Ensure public market quotes (Effective NAV / Unit Price) and Transaction Dates remain visible, adhering to financial UI standards established in Slice 26.
+- [ ] 28.5 Automated Test Verification: Add unit test in `TransactionHistoryPage.test.tsx` verifying masking toggles correctly with `isPrivacyMode`.

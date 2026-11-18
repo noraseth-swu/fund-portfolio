@@ -1034,3 +1034,23 @@ Database Schema & Aliases (fund_aliases, funds)
 4. **Remote Binding:** Bind origin to `https://github.com/noraseth-swu/fund-portfolio.git`.
 5. **CI/CD Pipeline:** Add `.github/workflows/ci.yml` running `cargo test`, `npm test`, and `npm run build`.
 6. **Push:** Execute `git push -u origin main` and verify green pipeline status on GitHub.
+
+---
+
+### Slice 28: Transaction History Page Privacy Mode Masking (Planned - Pending Execution)
+
+#### 1. Problem Statement:
+- The Privacy Mode toggle currently masks sensitive values on the Dashboard (`HoldingsTable` and `PortfolioSummaryCard`).
+- However, when the user navigates to the **Transaction History Page** (`TransactionHistoryPage.tsx`), all units, transaction amounts, fees, and the header summary total remain unmasked in plain text because `isPrivacyMode` is not yet passed to `TransactionHistoryPage`.
+
+#### 2. Scope & Implementation Plan (To be executed when instructed):
+1. **Prop Threading:** Pass `isPrivacyMode` from `App.tsx` into `TransactionHistoryPage.tsx`.
+2. **Column Masking:**
+   - Mask `units` with `******`.
+   - Mask `total_amount` (both THB and foreign currency) with `******`.
+   - Mask `fee` with `******`.
+   - Preserve public market quote `unit_price` (Effective NAV) and `trans_date` (consistent with financial UI standards established in Slice 26).
+3. **Header Summary Masking:**
+   - In the header subtitle ("X records shown (Total: Y.YY THB)"), mask the total amount as `(Total: ****** THB)` when `isPrivacyMode` is true.
+4. **Test Suite:**
+   - Update `frontend/src/test/TransactionHistoryPage.test.tsx` to verify masking toggles on and off according to `isPrivacyMode`.
