@@ -448,23 +448,20 @@
   - Verify zero layout breaking or horizontal scrolling down to 360px viewport width.
 
 ### Slice 35: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Milestone 5.6)
-- [ ] 35.1 Multi-Stage Production Containerization (`Dockerfile` & `docker-compose.yml`):
-  - Multi-stage build for Rust Actix backend (`cargo chef` / optimized debian-slim or alpine runner with cached layers).
-  - Production static bundle serving for React Vite frontend (`nginx:alpine` or embedded static file service) with reverse proxy for `/api/` and SSE.
-  - Non-root user execution (`USER appuser`) and container health checks (`HEALTHCHECK CMD curl -f http://localhost:8088/api/health || exit 1`).
-- [ ] 35.2 Cloudflare Tunnel (`cloudflared`) Integration:
-  - Provision `cloudflared` service in `docker-compose.yml` or native homelab systemd service.
-  - Configuration template (`deploy/cloudflared/config.yml.example`) with ingress rules mapping Custom Domain to local container ports with zero port-forwarding.
-  - WebSocket / SSE streaming support through Tunnel for live email harvester logs.
-- [ ] 35.3 Cloudflare Zero Trust (Access) Policy Specification:
-  - Architecture spec for Custom Domain routing (e.g., `portfolio.yourdomain.com`).
-  - Zero Trust Access Application setup guide (One-Time PIN via authorized email / Google OAuth) ensuring zero public unauthorized access.
-  - Bypass rules / Service Tokens for automated webhooks or mobile notifications if applicable.
-- [ ] 35.4 SQLite Persistence, Safe File Permissions & Automated Daily Backup Script:
-  - Dedicated Docker volume mapping for database (`/app/data/portfolio.db`) and encrypted statement cache (`/app/data/statements`).
-  - Automated SQLite backup script (`deploy/scripts/backup-db.sh` & `.ps1`) utilizing SQLite `.backup` / `VACUUM INTO` with 30-day rotation before daily 20:30 NAV sync.
-- [ ] 35.5 Homelab Deployment Runbook & Operational Verification:
-  - Create step-by-step documentation [`docs/homelab-deployment.md`](file:///d:/git/fund-portfolio/docs/homelab-deployment.md) covering environment variables, secret setup, Cloudflare token creation, and initial bootstrap.
-  - Test building and launching via Docker Compose locally to ensure healthcheck passes and services start cleanly.
+- [ ] 35.1 Multi-Stage Production Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`):
+  - Multi-stage build for Rust Actix backend using `cargo-chef` for layer caching, creating minimal `debian:bookworm-slim` image with non-root `appuser`.
+  - Multi-stage build for Vite React frontend + `nginx:alpine` gateway configured for SPA routing (`try_files`), reverse proxy to `/api/`, and unbuffered SSE live logs.
+  - Container health checks (`HEALTHCHECK CMD curl -f http://localhost:8088/api/health || exit 1`).
+- [ ] 35.2 Automated GitHub Actions CI/CD to GHCR (`.github/workflows/docker-publish.yml`):
+  - Workflow to build and push multi-architecture containers to GitHub Container Registry (`ghcr.io/noraseth-swu/fund-portfolio-backend:latest` and `fund-portfolio-web:latest`).
+  - GitHub token permissions and caching strategy for swift automated image publication.
+- [ ] 35.3 Dockge-Native Compose Stack & Network Integration (`deploy/dockge/compose.yaml`):
+  - Stack definition pulling GHCR images, configuring environment variables, and mapping persistent data directory `./data:/app/data`.
+  - External network integration to attach to existing Homelab Cloudflare Tunnel Docker network (zero duplicate `cloudflared` daemon).
+- [ ] 35.4 SQLite Persistence, Safe File Permissions & Automated Backup Routine:
+  - Persistent storage structure for `portfolio.db` and encrypted statements.
+  - Automated SQLite backup script (`deploy/scripts/backup-db.sh` & `.ps1`) utilizing `.backup` with 30-day retention rotation before daily 20:30 NAV sync.
+- [ ] 35.5 Homelab & Dockge Deployment Runbook (`docs/homelab-deployment.md`):
+  - Complete guide for Dockge stack creation, `.env` template, and Cloudflare Zero Trust Dashboard Public Hostname mapping + Access OTP/SSO policy.
 
 

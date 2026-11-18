@@ -1346,58 +1346,42 @@ Database Schema & Aliases (fund_aliases, funds)
 ### 6. Slice 35: Private Homelab Containerization & Cloudflare Zero Trust Deployment
 
 #### 6.1 Problem Statement & Objectives:
-- As noted in the Phase 5 Architecture statement, the system is designed to run 24/7 on the user's private Homelab server (Mini PC, Raspberry Pi / Ubuntu Server / TrueNAS) and provide remote access via a custom domain without opening router ports or exposing IP addresses.
-- While Milestone 6.4 in the roadmap envisions generic open-source one-click distribution, **Milestone 5.6 (Slice 35)** focuses specifically on production-hardening the user's Homelab deployment:
-  1. Multi-stage Docker builds separating heavy Rust compilation from the lean runtime container.
-  2. Nginx/Alpine reverse proxy serving the optimized React frontend and proxying `/api/` and SSE live streams to the backend.
-  3. Integrated `cloudflared` tunnel sidecar container with zero port forwarding (outbound tunnel connection to Cloudflare edge).
-  4. Cloudflare Zero Trust Access architecture (OTP/SSO authentication before traffic reaches the homelab).
-  5. SQLite volume persistence and an automated database backup routine with 30-day rotation before daily NAV sync.
+- As noted in the Phase 5 Architecture statement, the system is designed to run 24/7 on the user's private Homelab server managed by **Dockge** and accessed remotely via a custom domain through an existing Cloudflare Tunnel (Zero Trust) with zero open router ports.
+- **Key Architectural Decisions (Selected by User):**
+  1. **Image Delivery (Approach 2 - Automated CI/CD to GHCR):** Instead of compiling Rust locally on the Homelab server (which takes significant CPU and RAM), GitHub Actions builds multi-platform production Docker images upon git push to `main` and publishes them to **GitHub Container Registry (`ghcr.io/noraseth-swu/fund-portfolio-backend` and `fund-portfolio-web`)**. Dockge pulls the pre-built images instantly.
+  2. **Cloudflare Tunnel (Approach A - Existing Homelab Tunnel Network):** Rather than spawning a redundant `cloudflared` container, the Dockge stack connects to the existing Homelab Cloudflare Tunnel via an external Docker network (e.g. `homelab-network` / `tunnel-network`). A Public Hostname is mapped on the Cloudflare Zero Trust dashboard.
+  3. **Dockge-Native Compose Stack:** Provide a clean, copy-pasteable `compose.yaml` and `.env` template tailored specifically for Dockge's web interface.
+  4. **SQLite Persistence & Automated Backups:** Bind mount `/app/data` to the host directory with an automated backup script executed before daily NAV sync.
 
 #### 6.2 Technical Implementation Details:
 
-1. **Multi-Stage Production Containerization (`Dockerfile`, `docker-compose.yml`):**
-   - **Backend Container:** Multi-stage Rust build using `rust:alpine` or `debian:bookworm-slim` with `cargo-chef` layer caching. Final image runs as a non-privileged `appuser` with dumb-init for clean PID 1 signal forwarding.
-   - **Frontend & Web Gateway Container:** Multi-stage build running `npm run build` in Node, then serving compiled assets via `nginx:alpine` configured with HTTP/2, gzip/brotli compression, and proxying `/api/` to `backend:8088`.
-   - **Health Checks:** Native Docker `HEALTHCHECK` checking `http://localhost:8088/api/health` and Nginx `/`.
+1. **Multi-Stage Production Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`):**
+   - **Backend (`backend/Dockerfile`):** Multi-stage build using `lukemathwalker/cargo-chef:latest-rust-1-bookworm` to cache crate dependencies, building a lean `debian:bookworm-slim` runtime image running as non-privileged `appuser` with dumb-init.
+   - **Frontend & Web Gateway (`frontend/Dockerfile` & `frontend/nginx.conf`):** Multi-stage build with `node:20-alpine` compiling Vite assets, then copied to `nginx:alpine` configured for SPA routing (`try_files $uri $uri/ /index.html`), reverse proxying `/api/` to `backend:8088`, and disabling proxy buffering (`proxy_buffering off;`) for SSE live email sync log streaming.
 
-2. **Cloudflare Tunnel (`cloudflared`) Integration:**
-   - **Deployment Model:** A `cloudflared` service defined directly in `docker-compose.yml`:
-     ```yaml
-     services:
-       tunnel:
-         image: cloudflare/cloudflared:latest
-         restart: unless-stopped
-         command: tunnel --no-autoupdate run
-         environment:
-           - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
-         depends_on:
-           - web
-     ```
-   - **Ingress Configuration (`deploy/cloudflared/config.yml`):**
-     ```yaml
-     tunnel: <TUNNEL_ID>
-     credentials-file: /etc/cloudflared/credentials.json
-     ingress:
-       - hostname: portfolio.yourdomain.com
-         service: http://web:80
-       - service: http_status:404
-     ```
+2. **Automated GitHub Actions CI/CD (`.github/workflows/docker-publish.yml`):**
+   - Triggers on push to `main` (paths in `backend/**`, `frontend/**`, `deploy/**`, `.github/workflows/docker-publish.yml`).
+   - Uses `docker/build-push-action` to build and publish:
+     - `ghcr.io/${{ github.repository_owner }}/fund-portfolio-backend:latest`
+     - `ghcr.io/${{ github.repository_owner }}/fund-portfolio-web:latest`
+   - Configures automatic authentication via `${{ secrets.GITHUB_TOKEN }}`.
 
-3. **Cloudflare Zero Trust (Access) Application Security:**
-   - Cloudflare Zero Trust Access rule protecting `portfolio.yourdomain.com`.
-   - Identity Provider: Email One-Time PIN (OTP) or Google Workspace authentication.
-   - Session duration: 7 to 30 days for authorized devices.
-   - Zero open inbound ports required on the user's home internet connection (CGNAT friendly).
+3. **Dockge-Native Compose Stack (`deploy/dockge/compose.yaml`):**
+   - Defines `backend` and `web` services consuming GHCR images.
+   - Volume mounts `./data:/app/data` for persistent SQLite storage (`portfolio.db`) and statements.
+   - Joins an external Docker network (e.g. `cloudflared-net` or user's existing tunnel network) so the existing Cloudflare Tunnel container can route traffic by service name (`http://fund-portfolio-web:80`).
 
-4. **SQLite Persistence, Safe Permissions & Automated Daily Backup Script:**
-   - Named Docker volume `portfolio_data` mapped to `/app/data` (holding `portfolio.db` and statements).
+4. **Cloudflare Zero Trust (Access) Application Configuration Guide:**
+   - Public Hostname setup on existing Tunnel: `portfolio.<custom-domain>` -> `http://fund-portfolio-web:80` (with HTTP Host header).
+   - Cloudflare Zero Trust Access Policy: One-Time PIN (OTP) or Google Workspace SSO restricting access to authorized emails only.
+
+5. **SQLite Persistence, Safe Permissions & Automated Backup Script:**
    - Automated backup script (`deploy/scripts/backup-db.sh` & `backup-db.ps1`) executing:
-     `sqlite3 /app/data/portfolio.db ".backup '/app/data/backups/portfolio_$(date +%Y%m%d_%H%M%S).db'"`
-   - Automated 30-day retention cleanup.
+     `sqlite3 ./data/portfolio.db ".backup './data/backups/portfolio_$(date +%Y%m%d_%H%M%S).db'"`
+   - 30-day retention cleanup.
 
-5. **Operational Verification & Runbook:**
-   - Create [`docs/homelab-deployment.md`](file:///d:/git/fund-portfolio/docs/homelab-deployment.md) with step-by-step setup guides, `.env` production template, and disaster recovery procedures.
+6. **Operational Runbook:**
+   - Comprehensive documentation in [`docs/homelab-deployment.md`](file:///d:/git/fund-portfolio/docs/homelab-deployment.md) tailored specifically for Dockge + existing Cloudflare Tunnel setup.
 
 ---
 
