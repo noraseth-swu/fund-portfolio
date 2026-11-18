@@ -150,4 +150,50 @@ describe('TransactionHistoryPage Reactive Updates and Confirmation Actions', () 
     // TransactionModal should open
     expect(await screen.findByRole('heading', { name: /บันทึกรายการธุรกรรม|Record Transaction/i })).toBeInTheDocument();
   });
+
+  it('masks sensitive financial data when isPrivacyMode is true while keeping public quotes and dates visible', async () => {
+    const { rerender } = render(
+      <I18nProvider>
+        <ToastProvider>
+          <TransactionHistoryPage
+            refreshTrigger={0}
+            onBack={vi.fn()}
+            onDataChanged={vi.fn()}
+            isPrivacyMode={true}
+          />
+        </ToastProvider>
+      </I18nProvider>
+    );
+
+    await screen.findByText('SCBS&P500E');
+
+    // Sensitive data must be masked as '******'
+    const maskedElements = screen.getAllByText('******');
+    expect(maskedElements.length).toBeGreaterThanOrEqual(3);
+
+    // Units (24.6504) and Total Amount (1000.00) should NOT appear as plain text
+    expect(screen.queryByText('24.6504')).not.toBeInTheDocument();
+    expect(screen.queryByText('1,000.00')).not.toBeInTheDocument();
+
+    // Public market quote and trans date MUST remain visible
+    expect(screen.getByText('2026-01-16')).toBeInTheDocument();
+    expect(screen.getByText('40.5673')).toBeInTheDocument();
+
+    // When toggling privacy mode OFF, plain values should appear
+    rerender(
+      <I18nProvider>
+        <ToastProvider>
+          <TransactionHistoryPage
+            refreshTrigger={0}
+            onBack={vi.fn()}
+            onDataChanged={vi.fn()}
+            isPrivacyMode={false}
+          />
+        </ToastProvider>
+      </I18nProvider>
+    );
+
+    expect(await screen.findByText('24.6504')).toBeInTheDocument();
+    expect(screen.getByText('1,000.00')).toBeInTheDocument();
+  });
 });

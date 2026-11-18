@@ -30,6 +30,7 @@ interface Props {
   onBack: () => void;
   onDataChanged: () => void;
   refreshTrigger?: number;
+  isPrivacyMode?: boolean;
 }
 
 type SortField = 'trans_date' | 'fund_abbr' | 'platform' | 'trans_type' | 'units' | 'unit_price' | 'total_amount' | 'fee';
@@ -40,6 +41,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
   onBack,
   onDataChanged,
   refreshTrigger,
+  isPrivacyMode = false,
 }) => {
   const { t, locale } = useI18n();
   const toast = useToast();
@@ -307,7 +309,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
             </h1>
             <p className="text-xs text-slate-500 dark:text-slate-400 mt-0.5">
               {filteredTransactions.length} {locale === 'th' ? 'รายการที่แสดง' : 'records shown'} (
-              {locale === 'th' ? 'ยอดรวม' : 'Total'}: {totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB)
+              {locale === 'th' ? 'ยอดรวม' : 'Total'}: {isPrivacyMode ? '******' : `${totalFilteredAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB`})
             </p>
           </div>
         </div>
@@ -452,7 +454,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                 {t('selectedCount', { n: selectedIds.size })}
               </span>
               <span className="text-xs text-indigo-200 ml-2">
-                ({locale === 'th' ? 'ยอดเงินรวม' : 'Total'}: {selectedTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB)
+                ({locale === 'th' ? 'ยอดเงินรวม' : 'Total'}: {isPrivacyMode ? '******' : `${selectedTotalAmount.toLocaleString(undefined, { minimumFractionDigits: 2 })} THB`})
               </span>
             </div>
           </div>
@@ -651,17 +653,23 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                         </span>
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
-                        {parseFloat(item.units).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
+                        {isPrivacyMode ? '******' : parseFloat(item.units).toLocaleString(undefined, { minimumFractionDigits: 4, maximumFractionDigits: 4 })}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-slate-700 dark:text-slate-300">
                         {isStock ? `$${parseFloat(item.unit_price).toFixed(2)}` : parseFloat(item.unit_price).toFixed(4)}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono font-bold text-slate-900 dark:text-white">
-                        {parseFloat(item.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
-                        {isStock && <span className="text-[10px] text-slate-400 font-normal ml-1">THB</span>}
+                        {isPrivacyMode ? (
+                          '******'
+                        ) : (
+                          <>
+                            {parseFloat(item.total_amount).toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                            {isStock && <span className="text-[10px] text-slate-400 font-normal ml-1">THB</span>}
+                          </>
+                        )}
                       </td>
                       <td className="py-3.5 px-4 text-right font-mono text-slate-500 text-xs hidden md:table-cell">
-                        {parseFloat(item.fee) > 0 ? parseFloat(item.fee).toFixed(2) : '-'}
+                        {isPrivacyMode ? '******' : parseFloat(item.fee) > 0 ? parseFloat(item.fee).toFixed(2) : '-'}
                       </td>
                       <td className="py-3.5 px-4 text-center">
                         <button
@@ -694,10 +702,10 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                   <td className="py-3 px-4 text-right font-mono text-slate-500 dark:text-slate-400">-</td>
                   <td className="py-3 px-4 text-right font-mono text-slate-500 dark:text-slate-400">-</td>
                   <td className="py-3 px-4 text-right font-mono text-sm text-slate-900 dark:text-white">
-                    ฿{grandTotalStats.netInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {isPrivacyMode ? '******' : `฿${grandTotalStats.netInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </td>
                   <td className="py-3 px-4 text-right font-mono text-xs text-slate-600 dark:text-slate-300 hidden md:table-cell">
-                    ฿{grandTotalStats.totalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                    {isPrivacyMode ? '******' : `฿${grandTotalStats.totalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
                   </td>
                   <td className="py-3 px-4"></td>
                 </tr>
@@ -740,7 +748,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                 <span>{locale === 'th' ? 'ยอดซื้อรวม' : 'Total Buy'}</span>
               </div>
               <div className="text-lg font-bold font-mono text-emerald-700 dark:text-emerald-400">
-                ฿{grandTotalStats.totalBuy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {isPrivacyMode ? '******' : `฿${grandTotalStats.totalBuy.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </div>
             </div>
 
@@ -751,7 +759,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                 <span>{locale === 'th' ? 'ยอดขายรวม' : 'Total Sell'}</span>
               </div>
               <div className="text-lg font-bold font-mono text-amber-700 dark:text-amber-400">
-                ฿{grandTotalStats.totalSell.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {isPrivacyMode ? '******' : `฿${grandTotalStats.totalSell.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </div>
             </div>
 
@@ -761,7 +769,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                 {locale === 'th' ? 'ยอดเงินลงทุนสุทธิ' : 'Net Invested'}
               </div>
               <div className="text-lg font-bold font-mono text-indigo-700 dark:text-indigo-400">
-                ฿{grandTotalStats.netInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {isPrivacyMode ? '******' : `฿${grandTotalStats.netInvested.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </div>
             </div>
 
@@ -771,7 +779,7 @@ export const TransactionHistoryPage: React.FC<Props> = ({
                 {locale === 'th' ? 'ค่าธรรมเนียมรวม' : 'Total Fees'}
               </div>
               <div className="text-lg font-bold font-mono text-slate-700 dark:text-slate-300">
-                ฿{grandTotalStats.totalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}
+                {isPrivacyMode ? '******' : `฿${grandTotalStats.totalFee.toLocaleString(undefined, { minimumFractionDigits: 2, maximumFractionDigits: 2 })}`}
               </div>
             </div>
           </div>

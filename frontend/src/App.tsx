@@ -468,6 +468,7 @@ export const App: React.FC = () => {
             <TransactionHistoryPage
               refreshTrigger={dataVersion}
               initialFundFilter={historyFundFilter}
+              isPrivacyMode={isPrivacyMode}
               onBack={() => {
                 setActiveView('DASHBOARD');
                 setHistoryFundFilter(null);
