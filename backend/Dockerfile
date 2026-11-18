@@ -3,6 +3,7 @@ FROM lukemathwalker/cargo-chef:latest-rust-1-bookworm AS planner
 WORKDIR /app
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY config ./config
 RUN cargo chef prepare --recipe-path recipe.json
 
 # Stage 2: Cargo Chef Cook & Build
@@ -12,6 +13,7 @@ COPY --from=planner /app/recipe.json recipe.json
 RUN cargo chef cook --release --recipe-path recipe.json
 COPY Cargo.toml Cargo.lock ./
 COPY src ./src
+COPY config ./config
 RUN cargo build --release --bin backend
 
 # Stage 3: Runtime
