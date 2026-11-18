@@ -148,6 +148,11 @@ flowchart TD
    - เพิ่มตัวเลือกใน Settings สลับจากการใช้ Gemini API มาใช้ Local LLM (เช่น OpenThai / Qwen2.5 ผ่าน Ollama) สำหรับผู้ใช้ที่ต้องการประมวลผล Statement บน Homelab โดยไม่ส่งข้อมูลการเงินออกนอกเครือข่ายส่วนตัว (ปัจจุบันยังคงใช้สถาปัตยกรรม Gemini API / Regex ปกติ)
 5. **Milestone 5.5: PWA & Mobile UX Polish**
    - ปรับแต่ง Progressive Web App (PWA) ให้สามารถเปิดใช้งานบนโทรศัพท์มือถือผ่าน Cloudflare Tunnel ได้อย่างปลอดภัยและลื่นไหล
+6. **Milestone 5.6: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Slice 35)**
+   - จัดทำ Production Multi-Stage `Dockerfile` (Rust binary + Vite static bundle) และ `docker-compose.yml` สำหรับ Homelab
+   - คอนฟิก **Cloudflare Tunnel (`cloudflared`)** เชื่อมโยง Private Server ออกสู่ Custom Domain แบบ Zero Open Port (ไม่ต้อง Forward Port ที่เราเตอร์)
+   - กำหนดนโยบายความปลอดภัย **Cloudflare Zero Trust (Access)** ป้องกันการเข้าถึงด้วย OTP / Email / Identity Provider ก่อนเข้าสู่พอร์ตโฟลิโอ
+   - วางระบบ Persistent SQLite Storage, สิทธิ์ Non-root, และ Automated Backup Script พร้อม Rotation ป้องกันข้อมูลสูญหายก่อนรัน Daily NAV Sync
 
 ---
 

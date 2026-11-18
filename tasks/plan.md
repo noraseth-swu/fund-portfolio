@@ -1230,8 +1230,17 @@ Database Schema & Aliases (fund_aliases, funds)
    │     ├── Automated SEC Closing NAV Sync & Ingestion
    │     └── `scheduled_sync_logs` Checkpoint Table (`GET /api/cron/status`)
    │
-   └── Cloudflare Tunnel (Zero Trust Ingress)
-         │
+   ├── Containerization & Local Hardening (Milestone 5.6 / Slice 35)
+   │     ├── Multi-Stage Dockerfile (Rust Actix + Vite Production Assets)
+   │     ├── Docker Compose Service Definitions (Backend + Frontend + Cloudflared)
+   │     ├── SQLite Persistence Volumes & Automated Backup Script with Rotation
+   │     └── Non-Root User & Container Health Checks
+   │
+   └── Cloudflare Zero Trust Ingress (Milestone 5.6 / Slice 35)
+         │  - Outbound-only tunnel daemon (`cloudflared`) with zero open ports
+         │  - Custom Domain routing (`portfolio.yourdomain.com`)
+         │  - Cloudflare Access Identity Policy (One-Time PIN / Google OAuth)
+         │  - WebSocket & SSE streaming support
          v
    [ Mobile / Desktop Clients ] <---> Milestone 5.5 / Slice 34: PWA & Mobile UX
                                      (Vite PWA, Standalone Manifest, Safe-Area Insets)
@@ -1243,6 +1252,7 @@ Database Schema & Aliases (fund_aliases, funds)
 | `security-ci` | 5.2 (Slice 32) | Dependabot `.github/dependabot.yml`, CI security audit gates | — |
 | `daily-scheduler` | 5.3 (Slice 33) | In-process daily Tokio scheduler (20:30 ICT), SQLite log table, status endpoint | `observability` |
 | `pwa-mobile` | 5.5 (Slice 34) | Web App Manifest, Service Worker cache, mobile touch ergonomics (>=44px), safe area insets | — |
+| `homelab-cloudflare` | 5.6 (Slice 35) | Multi-stage Docker, Compose stack, Cloudflare Tunnel config, Zero Trust Access, SQLite backup | `daily-scheduler`, `pwa-mobile` |
 
 > [!NOTE]
 > **Scope Exclusion (Per User Directive):** Milestone 5.4 (*Local Privacy Mode via Ollama / OpenThai*) is explicitly excluded from this phase and deferred to a future milestone. All statement parsing continues through the existing Gemini API / regex pipeline.
@@ -1333,19 +1343,80 @@ Database Schema & Aliases (fund_aliases, funds)
 
 ---
 
-### 6. Dependency Graph & Suggested Execution Sequence
+### 6. Slice 35: Private Homelab Containerization & Cloudflare Zero Trust Deployment
+
+#### 6.1 Problem Statement & Objectives:
+- As noted in the Phase 5 Architecture statement, the system is designed to run 24/7 on the user's private Homelab server (Mini PC, Raspberry Pi / Ubuntu Server / TrueNAS) and provide remote access via a custom domain without opening router ports or exposing IP addresses.
+- While Milestone 6.4 in the roadmap envisions generic open-source one-click distribution, **Milestone 5.6 (Slice 35)** focuses specifically on production-hardening the user's Homelab deployment:
+  1. Multi-stage Docker builds separating heavy Rust compilation from the lean runtime container.
+  2. Nginx/Alpine reverse proxy serving the optimized React frontend and proxying `/api/` and SSE live streams to the backend.
+  3. Integrated `cloudflared` tunnel sidecar container with zero port forwarding (outbound tunnel connection to Cloudflare edge).
+  4. Cloudflare Zero Trust Access architecture (OTP/SSO authentication before traffic reaches the homelab).
+  5. SQLite volume persistence and an automated database backup routine with 30-day rotation before daily NAV sync.
+
+#### 6.2 Technical Implementation Details:
+
+1. **Multi-Stage Production Containerization (`Dockerfile`, `docker-compose.yml`):**
+   - **Backend Container:** Multi-stage Rust build using `rust:alpine` or `debian:bookworm-slim` with `cargo-chef` layer caching. Final image runs as a non-privileged `appuser` with dumb-init for clean PID 1 signal forwarding.
+   - **Frontend & Web Gateway Container:** Multi-stage build running `npm run build` in Node, then serving compiled assets via `nginx:alpine` configured with HTTP/2, gzip/brotli compression, and proxying `/api/` to `backend:8088`.
+   - **Health Checks:** Native Docker `HEALTHCHECK` checking `http://localhost:8088/api/health` and Nginx `/`.
+
+2. **Cloudflare Tunnel (`cloudflared`) Integration:**
+   - **Deployment Model:** A `cloudflared` service defined directly in `docker-compose.yml`:
+     ```yaml
+     services:
+       tunnel:
+         image: cloudflare/cloudflared:latest
+         restart: unless-stopped
+         command: tunnel --no-autoupdate run
+         environment:
+           - TUNNEL_TOKEN=${CLOUDFLARE_TUNNEL_TOKEN}
+         depends_on:
+           - web
+     ```
+   - **Ingress Configuration (`deploy/cloudflared/config.yml`):**
+     ```yaml
+     tunnel: <TUNNEL_ID>
+     credentials-file: /etc/cloudflared/credentials.json
+     ingress:
+       - hostname: portfolio.yourdomain.com
+         service: http://web:80
+       - service: http_status:404
+     ```
+
+3. **Cloudflare Zero Trust (Access) Application Security:**
+   - Cloudflare Zero Trust Access rule protecting `portfolio.yourdomain.com`.
+   - Identity Provider: Email One-Time PIN (OTP) or Google Workspace authentication.
+   - Session duration: 7 to 30 days for authorized devices.
+   - Zero open inbound ports required on the user's home internet connection (CGNAT friendly).
+
+4. **SQLite Persistence, Safe Permissions & Automated Daily Backup Script:**
+   - Named Docker volume `portfolio_data` mapped to `/app/data` (holding `portfolio.db` and statements).
+   - Automated backup script (`deploy/scripts/backup-db.sh` & `backup-db.ps1`) executing:
+     `sqlite3 /app/data/portfolio.db ".backup '/app/data/backups/portfolio_$(date +%Y%m%d_%H%M%S).db'"`
+   - Automated 30-day retention cleanup.
+
+5. **Operational Verification & Runbook:**
+   - Create [`docs/homelab-deployment.md`](file:///d:/git/fund-portfolio/docs/homelab-deployment.md) with step-by-step setup guides, `.env` production template, and disaster recovery procedures.
+
+---
+
+### 7. Dependency Graph & Suggested Execution Sequence
 
 ```
 Phase 5 Execution Sequence:
 
-  [Slice 32: Dependabot & CI Security] (Fastest, zero-runtime dependency)
+  [Slice 32: Dependabot & CI Security] (Fastest, zero-runtime dependency) - DONE
          │
          v
-  [Slice 31: Sentry Full-Stack Observability] (Provides monitoring foundation)
+  [Slice 31: Sentry Full-Stack Observability] (Provides monitoring foundation) - DONE
          │
          v
-  [Slice 33: Autonomous Daily NAV Scheduler] (Monitored by Slice 31)
+  [Slice 33: Autonomous Daily NAV Scheduler] (Monitored by Slice 31) - DONE
          │
          v
-  [Slice 34: PWA & Mobile Touch Optimization] (UI & Client-side polishing)
+  [Slice 34: PWA & Mobile Touch Optimization] (UI & Client-side polishing) - DONE
+         │
+         v
+  [Slice 35: Homelab Containerization & Cloudflare Zero Trust Tunnel] (Deployment)
 ```

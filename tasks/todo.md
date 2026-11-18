@@ -386,7 +386,7 @@
   - Provide backend background worker / task control (`POST /api/nav/backfill/start`, `POST /api/nav/backfill/pause`, `GET /api/nav/backfill/status`).
   - Provide UI status indicator or progress modal showing backfill percentage, current fund, date range, and estimated completion time.
 
-## Phase 5: Automation, Observability & Infrastructure Deployment (Completed - Slices 31, 32, 33, 34)
+## Phase 5: Automation, Observability & Infrastructure Deployment (In Progress - Slice 35 Planned)
 
 ### Slice 31: Production Observability & Error Monitoring (Sentry Full-Stack Integration - Milestone 5.1)
 - [x] 31.1 Sentry Configuration & Environment Schema:
@@ -446,5 +446,25 @@
 - [x] 34.4 Cloudflare Tunnel & Mobile Verification:
   - Verify PWA installability prompt in Chrome/Safari mobile emulation.
   - Verify zero layout breaking or horizontal scrolling down to 360px viewport width.
+
+### Slice 35: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Milestone 5.6)
+- [ ] 35.1 Multi-Stage Production Containerization (`Dockerfile` & `docker-compose.yml`):
+  - Multi-stage build for Rust Actix backend (`cargo chef` / optimized debian-slim or alpine runner with cached layers).
+  - Production static bundle serving for React Vite frontend (`nginx:alpine` or embedded static file service) with reverse proxy for `/api/` and SSE.
+  - Non-root user execution (`USER appuser`) and container health checks (`HEALTHCHECK CMD curl -f http://localhost:8088/api/health || exit 1`).
+- [ ] 35.2 Cloudflare Tunnel (`cloudflared`) Integration:
+  - Provision `cloudflared` service in `docker-compose.yml` or native homelab systemd service.
+  - Configuration template (`deploy/cloudflared/config.yml.example`) with ingress rules mapping Custom Domain to local container ports with zero port-forwarding.
+  - WebSocket / SSE streaming support through Tunnel for live email harvester logs.
+- [ ] 35.3 Cloudflare Zero Trust (Access) Policy Specification:
+  - Architecture spec for Custom Domain routing (e.g., `portfolio.yourdomain.com`).
+  - Zero Trust Access Application setup guide (One-Time PIN via authorized email / Google OAuth) ensuring zero public unauthorized access.
+  - Bypass rules / Service Tokens for automated webhooks or mobile notifications if applicable.
+- [ ] 35.4 SQLite Persistence, Safe File Permissions & Automated Daily Backup Script:
+  - Dedicated Docker volume mapping for database (`/app/data/portfolio.db`) and encrypted statement cache (`/app/data/statements`).
+  - Automated SQLite backup script (`deploy/scripts/backup-db.sh` & `.ps1`) utilizing SQLite `.backup` / `VACUUM INTO` with 30-day rotation before daily 20:30 NAV sync.
+- [ ] 35.5 Homelab Deployment Runbook & Operational Verification:
+  - Create step-by-step documentation [`docs/homelab-deployment.md`](file:///d:/git/fund-portfolio/docs/homelab-deployment.md) covering environment variables, secret setup, Cloudflare token creation, and initial bootstrap.
+  - Test building and launching via Docker Compose locally to ensure healthcheck passes and services start cleanly.
 
 
