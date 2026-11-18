@@ -35,22 +35,18 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./
 RUN pip3 install --no-cache-dir --break-system-packages -r requirements.txt
 
-# Create application user and data directory
-RUN useradd -m -u 10001 -U appuser && \
-    mkdir -p /app/data /app/scripts /app/config && \
-    chown -R appuser:appuser /app
+# Create application directory
+RUN mkdir -p /app/data /app/scripts /app/config
 
 # Copy binary from builder
 COPY --from=builder /app/target/release/backend /app/backend
 
-# Copy python harvester scripts and config
+# Copy python harvester scripts, config and entrypoint
 COPY scripts/ /app/scripts/
 COPY config/ /app/config/
+COPY entrypoint.sh /app/entrypoint.sh
 
-# Ensure permissions
-RUN chown -R appuser:appuser /app/scripts /app/config /app/backend
-
-USER appuser
+RUN chmod +x /app/entrypoint.sh /app/backend
 
 ENV SERVER_PORT=8088
 ENV DATABASE_URL=sqlite:/app/data/portfolio.db
@@ -60,5 +56,4 @@ EXPOSE 8088
 HEALTHCHECK --interval=30s --timeout=5s --start-period=10s --retries=3 \
     CMD curl -f http://localhost:8088/api/health || exit 1
 
-ENTRYPOINT ["/usr/bin/dumb-init", "--"]
-CMD ["/app/backend"]
+ENTRYPOINT ["/app/entrypoint.sh"]
