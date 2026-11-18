@@ -12,24 +12,57 @@ use sec::SecClient;
 use std::env;
 use std::sync::Arc;
 use sync::SyncService;
+use tracing_subscriber::layer::SubscriberExt;
+use tracing_subscriber::util::SubscriberInitExt;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     dotenv().ok();
 
-    // 0. Initialise Tracing Subscriber (Structured Logging by Level: DEBUG, INFO, WARN, ERROR)
-    tracing_subscriber::fmt()
-        .with_env_filter(
-            tracing_subscriber::EnvFilter::try_from_default_env()
-                .unwrap_or_else(|_| "backend=info,tower_http=info".into()),
-        )
+    // 0. Sentry Observability & Error Monitoring (Optional - GitHub Student Developer Pack)
+    let sentry_dsn = env::var("SENTRY_DSN").unwrap_or_default();
+    let _sentry_guard = if !sentry_dsn.trim().is_empty() && sentry_dsn.starts_with("http") {
+        let env_name = env::var("SENTRY_ENVIRONMENT").unwrap_or_else(|_| "production".into());
+        let mut options = sentry::ClientOptions::default();
+        options.release = sentry::release_name!();
+        options.environment = Some(env_name.into());
+        options.before_send = Some(Arc::new(|mut event| {
+            // PII Redaction Filter: Redact authorization headers, cookies, and sensitive payload data
+            if let Some(req) = event.request.as_mut() {
+                req.headers.remove("authorization");
+                req.headers.remove("cookie");
+                req.data = None; // Redact raw transaction payloads
+            }
+            Some(event)
+        }));
+        Some(sentry::init((sentry_dsn, options)))
+    } else {
+        None
+    };
+
+    // Initialise Tracing Subscriber with Sentry integration
+    let env_filter = tracing_subscriber::EnvFilter::try_from_default_env()
+        .unwrap_or_else(|_| "backend=info,tower_http=info".into());
+
+    let fmt_layer = tracing_subscriber::fmt::layer()
         .with_target(false)
-        .compact()
+        .compact();
+
+    tracing_subscriber::registry()
+        .with(env_filter)
+        .with(fmt_layer)
+        .with(sentry::integrations::tracing::SpanLayer::default())
+        .with(sentry::integrations::tracing::LogLayer::default())
         .init();
 
     tracing::info!("============================================================");
     tracing::info!("  Fund Portfolio Management - High Performance API Server   ");
     tracing::info!("============================================================");
+    if _sentry_guard.is_some() {
+        tracing::info!("[✓] Sentry Error Monitoring is active.");
+    } else {
+        tracing::info!("[i] Sentry Error Monitoring is disabled (SENTRY_DSN not set).");
+    }
 
     // 1. Initialise SQLite Database (WAL mode)
     let db_url = env::var("DATABASE_URL").unwrap_or_else(|_| "sqlite:portfolio.db".to_string());

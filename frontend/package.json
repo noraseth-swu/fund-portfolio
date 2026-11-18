@@ -12,6 +12,7 @@
   },
   "dependencies": {
     "@clerk/react": "^6.18.8",
+    "@sentry/react": "^11.14.0",
     "@tailwindcss/vite": "^4.3.5",
     "clsx": "^2.1.1",
     "lucide-react": "^1.72.0",

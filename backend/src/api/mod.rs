@@ -29,6 +29,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
     let mut router = Router::new()
         // Health check
         .route("/api/health", get(handlers::health_check))
+        .route("/api/debug/sentry-test", get(handlers::sentry_test_trigger))
         .route("/api/brokers", get(handlers::get_brokers))
         // Portfolio summary
         .route("/api/portfolio", get(handlers::get_portfolio))

@@ -1726,3 +1726,16 @@ pub async fn batch_delete_pending(
 
     Ok(Json(serde_json::json!({ "status": "deleted", "count": deleted })))
 }
+
+/// GET /api/debug/sentry-test
+pub async fn sentry_test_trigger() -> impl IntoResponse {
+    let event_id = sentry::capture_message(
+        "Manual Sentry Verification Test from Fund Portfolio API",
+        sentry::Level::Warning,
+    );
+    Json(serde_json::json!({
+        "status": "ok",
+        "message": "Sentry verification event captured successfully",
+        "event_id": event_id.to_string()
+    }))
+}
