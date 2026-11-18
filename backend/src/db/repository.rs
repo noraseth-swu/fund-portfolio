@@ -1795,6 +1795,93 @@ impl Repository {
         crate::db::seed_default_email_broker_configs(pool).await?;
         Self::get_email_broker_configs(pool).await
     }
+
+    /// บันทึกเริ่มต้นการทำงานของ Background Scheduler Daemon (Slice 33)
+    pub async fn insert_scheduled_sync_log(
+        pool: &DbPool,
+        job_name: &str,
+    ) -> Result<i64, Box<dyn std::error::Error + Send + Sync>> {
+        let id = sqlx::query_scalar::<_, i64>(
+            r#"
+            INSERT INTO scheduled_sync_logs (job_name, status)
+            VALUES (?1, 'RUNNING')
+            RETURNING id
+            "#,
+        )
+        .bind(job_name)
+        .fetch_one(pool)
+        .await?;
+        Ok(id)
+    }
+
+    /// อัปเดตสถานะเมื่อการทำงานของ Scheduled Sync เสร็จสิ้น (Slice 33)
+    pub async fn complete_scheduled_sync_log(
+        pool: &DbPool,
+        id: i64,
+        status: &str,
+        updated_funds_count: i64,
+        error_summary: Option<&str>,
+    ) -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
+        sqlx::query(
+            r#"
+            UPDATE scheduled_sync_logs
+            SET status = ?1,
+                completed_at = CURRENT_TIMESTAMP,
+                updated_funds_count = ?2,
+                error_summary = ?3
+            WHERE id = ?4
+            "#,
+        )
+        .bind(status)
+        .bind(updated_funds_count)
+        .bind(error_summary)
+        .bind(id)
+        .execute(pool)
+        .await?;
+        Ok(())
+    }
+
+    /// ดึงประวัติการรันล่าสุดของงาน Schedule (Slice 33)
+    pub async fn get_last_scheduled_sync_log(
+        pool: &DbPool,
+        job_name: &str,
+    ) -> Result<Option<crate::db::schema::ScheduledSyncLog>, Box<dyn std::error::Error + Send + Sync>> {
+        let log = sqlx::query_as::<_, crate::db::schema::ScheduledSyncLog>(
+            r#"
+            SELECT id, job_name, triggered_at, completed_at, status, updated_funds_count, error_summary
+            FROM scheduled_sync_logs
+            WHERE job_name = ?1
+            ORDER BY id DESC
+            LIMIT 1
+            "#,
+        )
+        .bind(job_name)
+        .fetch_optional(pool)
+        .await?;
+        Ok(log)
+    }
+
+    /// ตรวจสอบว่าในวันนี้มีการรันสำเร็จแล้วหรือไม่ (Slice 33)
+    pub async fn has_successful_sync_today(
+        pool: &DbPool,
+        job_name: &str,
+        date_prefix_ict: &str,
+    ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        let count: i64 = sqlx::query_scalar(
+            r#"
+            SELECT COUNT(*)
+            FROM scheduled_sync_logs
+            WHERE job_name = ?1
+              AND status = 'SUCCESS'
+              AND triggered_at LIKE ?2
+            "#,
+        )
+        .bind(job_name)
+        .bind(format!("{date_prefix_ict}%"))
+        .fetch_one(pool)
+        .await?;
+        Ok(count > 0)
+    }
 }
 
 #[cfg(test)]

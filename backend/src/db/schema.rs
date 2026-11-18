@@ -30,3 +30,14 @@ pub struct EmailBrokerConfig {
     pub password_patterns: Vec<String>,
     pub ai_prompt_variant: String,
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize, sqlx::FromRow)]
+pub struct ScheduledSyncLog {
+    pub id: i64,
+    pub job_name: String,
+    pub triggered_at: String,
+    pub completed_at: Option<String>,
+    pub status: String,
+    pub updated_funds_count: i64,
+    pub error_summary: Option<String>,
+}

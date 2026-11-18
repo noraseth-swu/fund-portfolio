@@ -1739,3 +1739,36 @@ pub async fn sentry_test_trigger() -> impl IntoResponse {
         "event_id": event_id.to_string()
     }))
 }
+
+/// GET /api/cron/status (ตรวจสอบสถานะ Daily NAV Scheduler Daemon - Slice 33)
+pub async fn get_cron_status(
+    State(state): State<Arc<AppState>>,
+) -> impl IntoResponse {
+    let enabled = std::env::var("DAILY_NAV_SYNC_ENABLED")
+        .unwrap_or_else(|_| "true".into())
+        .parse::<bool>()
+        .unwrap_or(true);
+
+    let target_hour = std::env::var("DAILY_NAV_SYNC_HOUR")
+        .unwrap_or_else(|_| "20".into())
+        .parse::<u32>()
+        .unwrap_or(20);
+
+    let target_minute = std::env::var("DAILY_NAV_SYNC_MINUTE")
+        .unwrap_or_else(|_| "30".into())
+        .parse::<u32>()
+        .unwrap_or(30);
+
+    let now_ict = crate::cron::DailyNavScheduler::now_ict();
+    let last_run = Repository::get_last_scheduled_sync_log(&state.pool, crate::cron::DailyNavScheduler::JOB_NAME)
+        .await
+        .unwrap_or(None);
+
+    Json(serde_json::json!({
+        "enabled": enabled,
+        "target_time_ict": format!("{:02}:{:02}", target_hour, target_minute),
+        "current_time_ict": now_ict.format("%Y-%m-%d %H:%M:%S").to_string(),
+        "job_name": crate::cron::DailyNavScheduler::JOB_NAME,
+        "last_run": last_run
+    }))
+}

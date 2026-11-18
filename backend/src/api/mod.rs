@@ -30,6 +30,7 @@ pub fn create_router(state: Arc<AppState>) -> Router {
         // Health check
         .route("/api/health", get(handlers::health_check))
         .route("/api/debug/sentry-test", get(handlers::sentry_test_trigger))
+        .route("/api/cron/status", get(handlers::get_cron_status))
         .route("/api/brokers", get(handlers::get_brokers))
         // Portfolio summary
         .route("/api/portfolio", get(handlers::get_portfolio))

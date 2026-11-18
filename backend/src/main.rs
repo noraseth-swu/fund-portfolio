@@ -1,11 +1,13 @@
 mod api;
 pub mod codec;
+pub mod cron;
 mod db;
 mod domain;
 mod sec;
 mod sync;
 
 use api::{AppState, create_router};
+use cron::DailyNavScheduler;
 use db::{init_db, repository::Repository};
 use dotenvy::dotenv;
 use sec::SecClient;
@@ -104,6 +106,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error + Send + Sync>> {
     // 3. Start Background NAV Sync Worker (runs periodically)
     let shared_pool = Arc::new(pool.clone());
     SyncService::start_background_worker(shared_pool.clone(), api_key.clone());
+    DailyNavScheduler::start(shared_pool.clone(), api_key.clone());
 
     // 4. Create Axum Router & App State
     let gemini_api_key = env::var("GEMINI_API_KEY").unwrap_or_default();

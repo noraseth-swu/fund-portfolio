@@ -349,6 +349,19 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
             updated_at DATETIME DEFAULT CURRENT_TIMESTAMP
         );
 
+        -- 12. ตารางประวัติการทำงานของ Background Scheduler Daemon (Slice 33)
+        CREATE TABLE IF NOT EXISTS scheduled_sync_logs (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            job_name TEXT NOT NULL,
+            triggered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            completed_at DATETIME,
+            status TEXT NOT NULL,
+            updated_funds_count INTEGER DEFAULT 0,
+            error_summary TEXT
+        );
+        CREATE INDEX IF NOT EXISTS idx_sched_sync_job_status ON scheduled_sync_logs(job_name, status);
+        CREATE INDEX IF NOT EXISTS idx_sched_sync_triggered ON scheduled_sync_logs(triggered_at);
+
         -- 14. ตารางบันทึกราคาหุ้นต่างประเทศและอัตราแลกเปลี่ยนล่าสุด (US Stocks & FX Quotes)
         CREATE TABLE IF NOT EXISTS stock_prices (
             ticker TEXT PRIMARY KEY,
