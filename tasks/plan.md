@@ -1202,3 +1202,240 @@ Database Schema & Aliases (fund_aliases, funds)
 - Verify resumption after simulated crash or worker kill.
 - Verify zero duplicate rows or primary key constraint violations in `fund_nav_history`.
 - Verify total database size and performance under SQLite WAL mode.
+
+---
+
+## Phase 5: Automation, Observability & Infrastructure Deployment (Slices 31–34)
+
+### 1. Architectural Strategy & Capability Map
+
+```
++---------------------------------------------------------------------------------------------------+
+|                           Phase 5 Capability Map & Architecture                                   |
++---------------------------------------------------------------------------------------------------+
+
+                           [ GitHub Actions CI Pipeline ]
+                                         |
+                                         +--> Milestone 5.2: Dependabot & Security Audits
+                                              (`cargo-audit` + `npm audit --audit-level=high`)
+                                         |
+  [ Homelab Server (Private Network) ] <---+ (Docker/Binary Execution)
+   │
+   ├── Sentry Observability (Milestone 5.1 / Slice 31)
+   │     ├── Rust Backend: `sentry-rust` + PII Redaction Filter
+   │     └── React Frontend: `@sentry/react` + ErrorBoundary + PII Scrubbing
+   │
+   ├── Background Automation Daemon (Milestone 5.3 / Slice 33)
+   │     ├── Tokio Interval Scheduler (Daily 20:30 ICT / 13:30 UTC)
+   │     ├── Automated SEC Closing NAV Sync & Ingestion
+   │     └── `scheduled_sync_logs` Checkpoint Table (`GET /api/cron/status`)
+   │
+   └── Cloudflare Tunnel (Zero Trust Ingress)
+         │
+         v
+   [ Mobile / Desktop Clients ] <---> Milestone 5.5 / Slice 34: PWA & Mobile UX
+                                     (Vite PWA, Standalone Manifest, Safe-Area Insets)
+```
+
+| Module ID | Milestone | Responsibility | Depends on |
+|---|---|---|---|
+| `observability` | 5.1 (Slice 31) | Sentry SDK in Rust & React, ErrorBoundary, Panic hook, PII scrubber | — |
+| `security-ci` | 5.2 (Slice 32) | Dependabot `.github/dependabot.yml`, CI security audit gates | — |
+| `daily-scheduler` | 5.3 (Slice 33) | In-process daily Tokio scheduler (20:30 ICT), SQLite log table, status endpoint | `observability` |
+| `pwa-mobile` | 5.5 (Slice 34) | Web App Manifest, Service Worker cache, mobile touch ergonomics (>=44px), safe area insets | — |
+
+> [!NOTE]
+> **Scope Exclusion (Per User Directive):** Milestone 5.4 (*Local Privacy Mode via Ollama / OpenThai*) is explicitly excluded from this phase and deferred to a future milestone. All statement parsing continues through the existing Gemini API / regex pipeline.
+
+---
+
+### 2. Slice 31: Production Observability & Error Monitoring (Sentry Full-Stack Integration)
+
+#### 2.1 Problem Statement & Objectives:
+- As the application runs continuously on a private Homelab server accessed remotely via Cloudflare Tunnel, unhandled panics in Rust or React rendering exceptions would fail silently without alerting the user.
+- Utilizing the **GitHub Student Developer Pack** (which provides free Sentry Developer access with 500k errors/month), we integrate end-to-end exception tracking and performance tracing.
+- **Privacy Axiom (PII Scrubber):** Financial amounts, transaction quantities, bank account numbers, and statement passwords must **never** leave the machine. A strict redaction layer strips financial data before events reach Sentry.
+
+#### 2.2 Technical Implementation Details:
+1. **Environment Variables:**
+   - Backend: `SENTRY_DSN` in `backend/.env`. If unset, Sentry does not initialize (zero performance overhead, zero network requests).
+   - Frontend: `VITE_SENTRY_DSN` in `frontend/.env`. If unset, Sentry does not initialize.
+2. **Rust Backend (`backend/Cargo.toml`, `backend/src/main.rs`):**
+   - Dependencies: `sentry = "0.34"`, `sentry-actix = "0.34"`.
+   - Setup `sentry::init`:
+     ```rust
+     let _guard = sentry::init((
+         std::env::var("SENTRY_DSN").unwrap_or_default(),
+         sentry::ClientOptions {
+             release: sentry::release_name!(),
+             before_send: Some(std::sync::Arc::new(|mut event| {
+                 // PII Scrubber: strip sensitive request headers and bodies
+                 if let Some(req) = event.request.as_mut() {
+                     req.headers.remove("authorization");
+                     req.headers.remove("cookie");
+                     req.data = None; // Redact raw POST transaction payloads
+                 }
+                 Some(event)
+             })),
+             ..Default::default()
+         },
+     ));
+     ```
+3. **React Frontend (`frontend/package.json`, `frontend/src/main.tsx`):**
+   - Dependency: `@sentry/react`.
+   - Wrap `<App />` with `<Sentry.ErrorBoundary fallback={<ErrorFallbackUI />}>`.
+   - Client `beforeSend` hook redacting masked `******` strings and transaction numbers.
+4. **Verification Criteria:**
+   - `cargo test` passes without requiring a network connection or Sentry DSN.
+   - Vitest (`npm test`) passes with mock Sentry.
+   - Clean startup when `SENTRY_DSN` is empty (graceful no-op).
+
+---
+
+### 3. Slice 32: Supply Chain Security, Dependabot & Automated CI Security Audits
+
+#### 3.1 Problem Statement & Objectives:
+- Open-source dependencies in both Rust (`Cargo.lock`) and Node (`package-lock.json`) require proactive monitoring against known CVEs (Common Vulnerabilities and Exposures).
+- Automate security scans in GitHub Actions so vulnerable crates or npm packages are flagged immediately.
+
+#### 3.2 Technical Implementation Details:
+1. **Dependabot Configuration (`.github/dependabot.yml`):**
+   ```yaml
+   version: 2
+   updates:
+     - package-ecosystem: "cargo"
+       directory: "/backend"
+       schedule:
+         interval: "weekly"
+       commit-message:
+         prefix: "chore(deps-backend)"
+       open-pull-requests-limit: 5
+
+     - package-ecosystem: "npm"
+       directory: "/frontend"
+       schedule:
+         interval: "weekly"
+       commit-message:
+         prefix: "chore(deps-frontend)"
+       open-pull-requests-limit: 5
+   ```
+2. **CI Workflow Integration (`.github/workflows/ci.yml`):**
+   - Add audit step for Rust crates:
+     ```yaml
+     - name: Security audit Rust crates
+       uses: rustsec/audit-check@v1.4.1
+       with:
+         token: ${{ secrets.GITHUB_TOKEN }}
+     ```
+   - Add audit step for Node packages:
+     ```yaml
+     - name: Security audit npm packages
+       working-directory: frontend
+       run: npm audit --audit-level=high
+     ```
+3. **Verification Criteria:**
+   - Local command `npm audit --audit-level=high` reports 0 high/critical vulnerabilities.
+   - CI workflow executes all test and audit jobs cleanly.
+
+---
+
+### 4. Slice 33: Autonomous Daily NAV Sync Daemon & Ingestion Scheduler
+
+#### 4.1 Problem Statement & Objectives:
+- Mutual fund NAVs in Thailand are updated by AMCs and published to the SEC Open API between 19:30 and 21:30 ICT on trading days.
+- Currently, users must manually click "ซิงค์ NAV" or trigger an API call.
+- A native background daemon running inside the Homelab backend will automatically fetch closing NAVs at **20:30 ICT (13:30 UTC)** daily, updating portfolio values without human intervention.
+
+#### 4.2 Technical Implementation Details:
+1. **Scheduler Engine (`backend/src/cron/mod.rs`):**
+   - Implemented via a lightweight asynchronous task spawning on `actix_web::rt::spawn`.
+   - Checks every minute whether current time matches scheduled trigger (e.g. 20:30 ICT) and has not already executed today.
+   - Configurable in `.env`: `DAILY_NAV_SYNC_ENABLED=true`, `DAILY_NAV_SYNC_HOUR=20`, `DAILY_NAV_SYNC_MINUTE=30`.
+2. **Database Logging Table (`scheduled_sync_logs`):**
+   ```sql
+   CREATE TABLE IF NOT EXISTS scheduled_sync_logs (
+       id INTEGER PRIMARY KEY AUTOINCREMENT,
+       job_name TEXT NOT NULL,          -- 'DAILY_NAV_SYNC'
+       triggered_at DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+       completed_at DATETIME,
+       status TEXT NOT NULL,            -- 'RUNNING', 'SUCCESS', 'FAILED', 'PARTIAL'
+       updated_funds_count INTEGER DEFAULT 0,
+       error_log TEXT
+   );
+   ```
+3. **Observability Endpoint (`GET /api/cron/status`):**
+   - Returns:
+     ```json
+     {
+       "enabled": true,
+       "next_run_ict": "2026-11-19 20:30:00",
+       "last_run": {
+         "status": "SUCCESS",
+         "completed_at": "2026-11-18 20:31:12",
+         "updated_funds_count": 18
+       }
+     }
+     ```
+4. **Verification Criteria:**
+   - Unit test verifying time calculations and UTC/ICT timezone handling.
+   - Manual trigger test verifying `scheduled_sync_logs` records the execution with accurate fund counts.
+
+---
+
+### 5. Slice 34: Progressive Web App (PWA) & Mobile Cloudflare Tunnel Optimization
+
+#### 5.1 Problem Statement & Objectives:
+- When accessed through Cloudflare Tunnel on mobile devices (iOS Safari / Android Chrome), the app should look, feel, and behave like a native iOS/Android application.
+- Supports "Add to Home Screen" with full standalone windowing (no browser navigation bars), custom branding icons, and safe-area layout ergonomics.
+
+#### 5.2 Technical Implementation Details:
+1. **Manifest Configuration (`frontend/public/manifest.webmanifest`):**
+   ```json
+   {
+     "name": "Fund Portfolio Tracker",
+     "short_name": "Portfolio",
+     "description": "Personal Multi-Asset Portfolio Tracker for Thai Mutual Funds & US Stocks",
+     "start_url": "/",
+     "display": "standalone",
+     "background_color": "#020617",
+     "theme_color": "#4f46e5",
+     "icons": [
+       { "src": "/pwa-192x192.png", "sizes": "192x192", "type": "image/png" },
+       { "src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png" },
+       { "src": "/pwa-512x512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+     ]
+   }
+   ```
+2. **Vite Plugin PWA (`frontend/vite.config.ts`):**
+   - Configure `vite-plugin-pwa` with `registerType: 'autoUpdate'`.
+   - Cache app shell (HTML, CSS, JS, fonts) for instant page load over 4G/5G connections.
+3. **Mobile Viewport & Safe-Area Ergonomics (`frontend/index.html`, `frontend/src/index.css`):**
+   - `<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />`
+   - `<meta name="apple-mobile-web-app-capable" content="yes" />`
+   - `<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent" />`
+   - Add padding utility for iPhone notch / home indicator:
+     `padding-top: env(safe-area-inset-top); padding-bottom: env(safe-area-inset-bottom);`
+   - Touch Target Guarantee: Ensure all action buttons, modal close triggers, and calendar cells have at least 44x44px clickable areas per `antislop-human` guidelines.
+4. **Verification Criteria:**
+   - Chrome Lighthouse PWA audit passes with green badge.
+   - Responsive layout tested across mobile viewports (375px, 390px, 414px) with zero horizontal overflow.
+   - Full Vitest suite passes without service worker mock collision.
+
+---
+
+### 6. Dependency Graph & Suggested Execution Sequence
+
+```
+Phase 5 Execution Sequence:
+
+  [Slice 32: Dependabot & CI Security] (Fastest, zero-runtime dependency)
+         │
+         v
+  [Slice 31: Sentry Full-Stack Observability] (Provides monitoring foundation)
+         │
+         v
+  [Slice 33: Autonomous Daily NAV Scheduler] (Monitored by Slice 31)
+         │
+         v
+  [Slice 34: PWA & Mobile Touch Optimization] (UI & Client-side polishing)
+```

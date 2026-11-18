@@ -386,3 +386,65 @@
   - Provide backend background worker / task control (`POST /api/nav/backfill/start`, `POST /api/nav/backfill/pause`, `GET /api/nav/backfill/status`).
   - Provide UI status indicator or progress modal showing backfill percentage, current fund, date range, and estimated completion time.
 
+## Phase 5: Automation, Observability & Infrastructure Deployment (Planned - Pending Approval)
+
+### Slice 31: Production Observability & Error Monitoring (Sentry Full-Stack Integration - Milestone 5.1)
+- [ ] 31.1 Sentry Configuration & Environment Schema:
+  - Add `SENTRY_DSN` to `backend/.env.example` and `VITE_SENTRY_DSN` to `frontend/.env.example`.
+  - Document strict PII scrubbing contract (strip bank account numbers, passwords, transaction monetary amounts, and balance figures).
+- [ ] 31.2 Rust Backend Sentry Integration:
+  - Add `sentry` crate (with `tracing` or `actix-web` integration) to `backend/Cargo.toml`.
+  - Conditional initialization in `backend/src/main.rs` (graceful no-op when `SENTRY_DSN` is empty/unset).
+  - Implement panic hook and global error middleware capturing 500-level internal errors.
+  - Implement `before_send` filter to redact sensitive transaction payloads and financial amounts before dispatch.
+- [ ] 31.3 React Frontend Sentry Integration:
+  - Install `@sentry/react` in `frontend/package.json`.
+  - Conditional initialization in `frontend/src/main.tsx` (active only when `VITE_SENTRY_DSN` is set).
+  - Wrap top-level React tree in `<Sentry.ErrorBoundary>` with styled fallback UI.
+  - Implement client-side `beforeSend` scrubbing to strip masked `******` fields and financial PII.
+- [ ] 31.4 Observability Health Check & Verification:
+  - Add test endpoint `GET /api/debug/sentry-test` (guarded in non-production) to trigger and verify test exception capture.
+  - Verify that running with empty DSN has zero startup delay, no network calls, and zero test suite disruptions (`cargo test`, `npm test`).
+
+### Slice 32: Supply Chain Security, Dependabot & Automated CI Security Audits (Milestone 5.2)
+- [ ] 32.1 Dependabot Configuration (`.github/dependabot.yml`):
+  - Configure automated weekly security updates for `cargo` (target: `/backend`, daily or weekly).
+  - Configure automated weekly security updates for `npm` (target: `/frontend`, weekly).
+  - Set PR limit, assignees, and conventional commit prefix conventions.
+- [ ] 32.2 CI Security Scanning Integration (`.github/workflows/ci.yml`):
+  - Add `cargo-audit` step against the RustSec Advisory Database.
+  - Add `npm audit --audit-level=high` step for frontend production dependencies.
+  - Ensure security scanning runs non-blocking on pull requests or gates PRs appropriately.
+- [ ] 32.3 Local Baseline Vulnerability Audit:
+  - Run `cargo audit` locally and resolve/ignore known benign crates if any.
+  - Run `npm audit` locally and confirm zero high/critical vulnerabilities.
+
+### Slice 33: Autonomous Daily NAV Sync Daemon & Ingestion Scheduler (Milestone 5.3)
+- [ ] 33.1 Homelab Background Scheduler Engine (`backend/src/cron`):
+  - Implement lightweight, non-blocking asynchronous timer/scheduler in Rust using `tokio::time::interval` or `tokio-cron-scheduler`.
+  - Default schedule: Daily at 20:30 ICT (13:30 UTC), configurable via `DAILY_NAV_SYNC_HOUR` / `DAILY_NAV_SYNC_MINUTE` in `.env`.
+- [ ] 33.2 Automated Closing NAV Synchronization:
+  - Worker automatically triggers `trigger_nav_sync` for all active portfolio mutual funds.
+  - Rate-limited and graceful: handles SEC API responses with adaptive backoff; records outcome without interrupting concurrent user requests.
+- [ ] 33.3 Sync Execution History & Status Endpoint (`scheduled_sync_logs` table):
+  - Create SQLite table `scheduled_sync_logs` storing `id`, `sync_type`, `started_at`, `completed_at`, `status` (`SUCCESS`, `PARTIAL`, `FAILED`), `funds_updated`, `error_summary`.
+  - Add endpoint `GET /api/cron/status` returning daemon health, last sync execution, and next scheduled trigger.
+- [ ] 33.4 Scheduler Resilience & Unit Tests:
+  - Write unit tests in `backend/src/cron/tests.rs` verifying timer calculation, time zone alignment (ICT vs UTC), and error handling on network disconnect.
+
+### Slice 34: Progressive Web App (PWA) & Mobile Cloudflare Tunnel Optimization (Milestone 5.5)
+- [ ] 34.1 Web App Manifest & Mobile Branding (`frontend/public`):
+  - Generate standards-compliant PWA icons: `pwa-192x192.png`, `pwa-512x512.png`, `apple-touch-icon.png`, and `maskable-icon.png`.
+  - Create `manifest.webmanifest` defining `name: "Fund Portfolio"`, `short_name: "Portfolio"`, `theme_color: "#4f46e5"`, `background_color: "#020617"`, `display: "standalone"`, `orientation: "any"`.
+- [ ] 34.2 Service Worker Integration (`vite-plugin-pwa`):
+  - Install and configure `vite-plugin-pwa` with `registerType: 'autoUpdate'`.
+  - Configure caching strategy for local static assets (CSS, JS, fonts, SVG icons) to enable instant mobile app launch via Cloudflare Tunnel.
+- [ ] 34.3 Mobile Viewport, Touch Ergonomics & Safe-Area Layout:
+  - Add `viewport-fit=cover` in `index.html`.
+  - Add CSS utility classes respecting notch and gesture bars (`env(safe-area-inset-top)`, `env(safe-area-inset-bottom)`).
+  - Audit all interactive buttons, modal close triggers, and calendar day cells to guarantee minimum 44x44px touch targets per WCAG / `antislop-human` standards.
+- [ ] 34.4 Cloudflare Tunnel & Mobile Verification:
+  - Verify PWA installability prompt in Chrome/Safari mobile emulation.
+  - Verify zero layout breaking or horizontal scrolling down to 360px viewport width.
+
+
