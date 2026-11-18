@@ -1399,8 +1399,29 @@ Phase 5 Execution Sequence:
   [Slice 33: Autonomous Daily NAV Scheduler] (Monitored by Slice 31) - DONE
          │
          v
+  [Slice 30: Rate-Paced Historical NAV Backfill] (Gentle 2.5s SEC Ingestion) - DONE
+         │
+         v
   [Slice 34: PWA & Mobile Touch Optimization] (UI & Client-side polishing) - DONE
          │
          v
   [Slice 35: Homelab Containerization & Cloudflare Zero Trust Tunnel] (Deployment) - DONE
 ```
+
+---
+
+### 8. Phase 5 & Slice 30 Live Verification Summary
+
+1. **Production Infrastructure (Homelab & Cloudflare Zero Trust):**
+   - **Custom Domain:** [`https://fund-portfolio.unique-gistics.co.th`](https://fund-portfolio.unique-gistics.co.th) (Active, Zero-open-port HTTPS ingress).
+   - **Dockge Stack:** `fund-portfolio` running on `192.168.31.171:8085`.
+   - **Persistent SQLite Storage:** Database migration verified with **1,150,609.17 THB** portfolio value across 28 active holdings and 5 platforms (SCB, KBank, TTB, Dime, KBank PVD).
+2. **Sentry Observability (Milestone 5.1 / Slice 31):**
+   - **GitHub Student Developer Pack:** Sponsored Team Plan activated (50,000 errors/month, valid through Nov 18, 2027).
+   - **Environment Segregation:** Verified distinct `development` and `production` environments in Sentry.
+   - **Event Verification:** Test Event `294342eb7e264eba9af407838cc00c75` confirmed under `production` on Sentry Dashboard.
+3. **Background Daemons & Historical NAV Backfill (Slice 30 & 33):**
+   - **Daily Closing Scheduler:** Automated 20:30 ICT NAV sync with logging to `scheduled_sync_logs`.
+   - **Historical NAV Backfill:** `BackfillService` pacing 2,419 funds at 2.5s intervals with resumable checkpointing via `nav_backfill_progress`.
+4. **Next Strategic Focus:**
+   - **Phase 3:** Portfolio Analytics & Visualizations (Milestone 3.1: Historical Net Worth Growth Chart, Milestone 3.2: Asset Allocation Donut Charts).

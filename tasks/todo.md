@@ -399,13 +399,16 @@
   - Conditional initialization in `backend/src/main.rs` (graceful no-op when `SENTRY_DSN` is empty/unset).
   - Implement panic hook and global error middleware capturing 500-level internal errors.
   - Implement `before_send` filter to redact sensitive transaction payloads and financial amounts before dispatch.
+  - Sanitize environment names (trim surrounding quotes `"`/`'` from docker compose `.env`).
 - [x] 31.3 React Frontend Sentry Integration:
   - Install `@sentry/react` in `frontend/package.json`.
   - Conditional initialization in `frontend/src/main.tsx` (active only when `VITE_SENTRY_DSN` is set).
   - Wrap top-level React tree in `<Sentry.ErrorBoundary>` with styled fallback UI.
   - Implement client-side `beforeSend` scrubbing to strip masked `******` fields and financial PII.
 - [x] 31.4 Observability Health Check & Verification:
-  - Add test endpoint `GET /api/debug/sentry-test` (guarded in non-production) to trigger and verify test exception capture.
+  - Add test endpoint `GET /api/debug/sentry-test` (exposing `event_id` and active `environment`) to verify exception capture.
+  - Activated **GitHub Student Developer Pack** (Sponsored Team Plan with 50K errors/mo, valid through Nov 18, 2027).
+  - Live production verification: Verified Event `294342eb7e264eba9af407838cc00c75` tagged with `production` on Sentry Dashboard.
   - Verify that running with empty DSN has zero startup delay, no network calls, and zero test suite disruptions (`cargo test`, `npm test`).
 
 ### Slice 32: Supply Chain Security, Dependabot & Automated CI Security Audits (Milestone 5.2)
@@ -452,18 +455,22 @@
 ### Slice 35: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Milestone 5.6)
 - [x] 35.1 Multi-Stage Production Dockerfiles (`backend/Dockerfile`, `frontend/Dockerfile`, `frontend/nginx.conf`):
   - Multi-stage build for Rust Actix backend using `cargo-chef` for layer caching, creating minimal `debian:bookworm-slim` image with non-root `appuser`.
-  - Multi-stage build for Vite React frontend + `nginx:alpine` gateway configured for SPA routing (`try_files`), reverse proxy to `/api/`, and unbuffered SSE live logs.
+  - Multi-stage build for Vite React frontend + `nginx:alpine` gateway configured for SPA routing (`try_files`), reverse proxy to `/api/`, IPv6 binding `[::]:80`, and unbuffered SSE live logs.
   - Container health checks (`HEALTHCHECK CMD curl -f http://localhost:8088/api/health || exit 1`).
 - [x] 35.2 Automated GitHub Actions CI/CD to GHCR (`.github/workflows/docker-publish.yml`):
   - Workflow to build and push multi-architecture containers to GitHub Container Registry (`ghcr.io/noraseth-swu/fund-portfolio-backend:latest` and `fund-portfolio-web:latest`).
+  - Configured `COPY config ./config` in builder stages to ensure embedded JSON broker configurations compile successfully.
   - GitHub token permissions and caching strategy for swift automated image publication.
 - [x] 35.3 Dockge-Native Compose Stack & Network Integration (`deploy/dockge/compose.yaml`):
   - Stack definition pulling GHCR images, configuring environment variables, and mapping persistent data directory `./data:/app/data`.
-  - External network integration to attach to existing Homelab Cloudflare Tunnel Docker network (zero duplicate `cloudflared` daemon).
+  - Host network/port mapping for Cloudflare Tunnel ingress routing (`http://192.168.31.171:8085`).
 - [x] 35.4 SQLite Persistence, Safe File Permissions & Automated Backup Routine:
   - Persistent storage structure for `portfolio.db` and encrypted statements.
+  - Resolved SQLite Error 14 (`unable to open database file`) with `chmod 777` permissions and container entrypoint script.
+  - Migrated production database: verified live display of 1,150,609.17 THB across 28 holdings and 5 platforms.
   - Automated SQLite backup script (`deploy/scripts/backup-db.sh` & `.ps1`) utilizing `.backup` with 30-day retention rotation before daily 20:30 NAV sync.
 - [x] 35.5 Homelab & Dockge Deployment Runbook (`docs/homelab-deployment.md`):
   - Complete guide for Dockge stack creation, `.env` template, and Cloudflare Zero Trust Dashboard Public Hostname mapping + Access OTP/SSO policy.
+  - Live deployment verified at `https://fund-portfolio.unique-gistics.co.th` over HTTPS.
 
 

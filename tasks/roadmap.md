@@ -1,8 +1,8 @@
 # Fund Portfolio Management System: Updated Engineering Roadmap
 
-**Document Version:** 2.0  
-**Updated:** 2026-11-16  
-**Status:** Active & Aligned with Slices 1–25  
+**Document Version:** 2.1  
+**Updated:** 2026-11-18  
+**Status:** Active & Aligned with Slices 1–35 (Phases 1, 2, 5 Completed 100%; Phase 3 Next Priority)  
 **Reference Documents:** [tasks/plan.md](file:///d:/git/fund-portfolio/tasks/plan.md), [tasks/todo.md](file:///d:/git/fund-portfolio/tasks/todo.md), [spec.md](file:///d:/git/fund-portfolio/spec.md)
 
 ---
@@ -132,27 +132,30 @@ flowchart TD
 
 ---
 
-### 🛡️ Phase 5: Automation, Observability & Infrastructure Deployment (สถานะ: วางแผนไว้)
+### 🛡️ Phase 5: Automation, Observability & Infrastructure Deployment (เสร็จสมบูรณ์ 100% — รัน 24/7 บน Homelab และ Cloudflare Tunnel)
 
-> **Infrastructure Architecture Note:** ระบบวางแผน Deploy บน **Private Homelab Server** ของผู้ใช้ และให้บริการการเข้าถึงผ่าน **Cloudflare Tunnel (Zero Trust)** ร่วมกับ Custom Domain จึงไม่จำเป็นต้องพึ่งพา Public Cloud Hosting ภายนอก โดยเลือกนำสิทธิประโยชน์เครื่องมือระดับองค์กรจาก **GitHub Student Developer Pack** มายกระดับระบบด้านความปลอดภัยและการตรวจสอบข้อผิดพลาด ดังนี้:
+> **Infrastructure Architecture Note:** ระบบได้ทำการ Deploy บน **Private Homelab Server** ของผู้ใช้ และให้บริการการเข้าถึงผ่าน **Cloudflare Tunnel (Zero Trust)** ร่วมกับ Custom Domain (`https://fund-portfolio.unique-gistics.co.th`) แบบ Zero Open Port อย่างสมบูรณ์ พร้อมเชื่อมโยงสิทธิประโยชน์ระดับองค์กรจาก **GitHub Student Developer Pack** (Sentry Team Plan 1 ปีเต็ม):
 
-1. **Milestone 5.1: Sentry Application Performance & Error Monitoring (จาก GitHub Student Pack)**
-   - ผสาน **Sentry SDK** เข้ากับทั้ง Rust Backend (`sentry-rust`) และ React Frontend
-   - ดักจับ Unhandled Exceptions, Panic, และความผิดปกติจากการ Parse อีเมลสเตตเมนต์ธนาคารแบบ Real-time พร้อม Alert เข้า Discord/Email
-2. **Milestone 5.2: GitHub Advanced Security, Dependabot & Automated Code Audits**
-   - เปิดใช้งาน Secret Scanning และ Dependabot Security Updates เพื่อตรวจสอบช่องโหว่ของ Rust crates (`cargo audit`) และ npm dependencies อัตโนมัติใน CI/CD
-3. **Milestone 5.3: Automated Daily Daemon & Push Notifications**
-   - ตั้งรอบเวลาเบื้องหลัง (Background Worker) รันบน Homelab ดึงราคา NAV สิ้นวันอัตโนมัติช่วงเวลา 20:00 - 22:00 น.
-   - แจ้งเตือนสรุปพอร์ตประจำวันผ่าน Cloudflare Tunnel
+1. **[x] Milestone 5.1: Sentry Application Performance & Error Monitoring (จาก GitHub Student Pack)**
+   - ผสาน **Sentry SDK** ทั้ง Rust Backend (`sentry = "0.49"`) และ React Frontend (`@sentry/react` + ErrorBoundary)
+   - เปิดใช้งานแพ็กเกจ **Sponsored Team Plan** (50,000 Errors/เดือน นาน 1 ปีเต็ม ถึง 18 พ.ย. 2027)
+   - ระบบ PII Scrubber กรองข้อมูลทางการเงิน, รหัสผ่าน, และเลขบัญชีธนาคารก่อนส่ง
+   - แยก Environment ชัดเจน (`development` vs `production`) พร้อมทดสอบและยืนยันผลผ่านหน้าแดชบอร์ดจริง
+2. **[x] Milestone 5.2: GitHub Advanced Security, Dependabot & Automated Code Audits**
+   - เปิดใช้งาน Dependabot Security Updates ประจำสัปดาห์สำหรับ Cargo และ NPM (`.github/dependabot.yml`)
+   - ผสาน Security Scanning ใน CI/CD (`cargo-audit`, `npm audit`) ป้องกันช่องโหว่ซัพพลายเชน
+3. **[x] Milestone 5.3: Automated Daily NAV Daemon & Historical Backfill (Slice 30 & 33)**
+   - แบ็กกราวด์ Worker ประจำวัน (`DailyNavScheduler`) รันเวลา 20:30 ICT อัตโนมัติ พร้อมบันทึกประวัติลง `scheduled_sync_logs`
+   - ระบบดึงประวัติราคา NAV ย้อนหลัง 2,419 กองทุน (`BackfillService`) พร้อมคิวลำดับความสำคัญ (Priority Queue) และการจำกัดความเร็ว 2.5 วินาที/กองทุน เพื่อถนอมโควตา SEC Open API
 4. **Milestone 5.4: Local Privacy Mode (Ollama / OpenThai Integration) — *(เลื่อนออกไปก่อน - ยังไม่จำเป็น)***
-   - เพิ่มตัวเลือกใน Settings สลับจากการใช้ Gemini API มาใช้ Local LLM (เช่น OpenThai / Qwen2.5 ผ่าน Ollama) สำหรับผู้ใช้ที่ต้องการประมวลผล Statement บน Homelab โดยไม่ส่งข้อมูลการเงินออกนอกเครือข่ายส่วนตัว (ปัจจุบันยังคงใช้สถาปัตยกรรม Gemini API / Regex ปกติ)
-5. **Milestone 5.5: PWA & Mobile UX Polish**
-   - ปรับแต่ง Progressive Web App (PWA) ให้สามารถเปิดใช้งานบนโทรศัพท์มือถือผ่าน Cloudflare Tunnel ได้อย่างปลอดภัยและลื่นไหล
-6. **Milestone 5.6: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Slice 35)**
-   - จัดทำ Production Multi-Stage `Dockerfile` (Rust binary + Vite static bundle) และ `docker-compose.yml` สำหรับ Homelab
-   - คอนฟิก **Cloudflare Tunnel (`cloudflared`)** เชื่อมโยง Private Server ออกสู่ Custom Domain แบบ Zero Open Port (ไม่ต้อง Forward Port ที่เราเตอร์)
-   - กำหนดนโยบายความปลอดภัย **Cloudflare Zero Trust (Access)** ป้องกันการเข้าถึงด้วย OTP / Email / Identity Provider ก่อนเข้าสู่พอร์ตโฟลิโอ
-   - วางระบบ Persistent SQLite Storage, สิทธิ์ Non-root, และ Automated Backup Script พร้อม Rotation ป้องกันข้อมูลสูญหายก่อนรัน Daily NAV Sync
+   - ปัจจุบันระบบใช้ Regular Expression แบบ Zero-Token และ Gemini API ร่วมกับการเข้ารหัสฐานข้อมูลใน Homelab ส่วนตัวอย่างปลอดภัย
+5. **[x] Milestone 5.5: PWA & Mobile UX Polish (Slice 34)**
+   - Progressive Web App (PWA) ติดตั้งได้บน iOS/Android ด้วย Manifest และ Service Worker (`vite-plugin-pwa`)
+   - รองรับ Safe-area notch, gesture bars และขนาดปุ่มสัมผัสมาตรฐาน WCAG 44x44px
+6. **[x] Milestone 5.6: Private Homelab Containerization & Cloudflare Zero Trust Deployment (Slice 35)**
+   - Multi-stage `Dockerfile` (Rust binary + Nginx Alpine) คอมไพล์และพุชขึ้น GHCR อัตโนมัติด้วย GitHub Actions
+   - รันบน Dockge Stack พร้อมผสาน Docker Volume Mount `./data:/app/data` รักษาสถานะฐานข้อมูล `portfolio.db`
+   - เชื่อมต่อ Cloudflare Tunnel Ingress ปลอดภัยระดับ Zero Trust พร้อม Custom Domain สดใหม่ 24/7
 
 ---
 
