@@ -151,7 +151,12 @@ impl BackfillService {
                                 );
                             }
                             Err(e) => {
-                                let err_str = e.to_string();
+                                let mut err_str = e.to_string();
+                                let mut curr_err: Option<&(dyn std::error::Error + 'static)> = e.source();
+                                while let Some(src) = curr_err {
+                                    err_str.push_str(&format!(" -> {}", src));
+                                    curr_err = src.source();
+                                }
                                 tracing::warn!(
                                     "[Historical NAV Backfill] [!] Failed to backfill for {}: {}",
                                     proj_id, err_str

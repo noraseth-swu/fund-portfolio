@@ -24,6 +24,9 @@ impl SecClient {
 
         let client = reqwest::Client::builder()
             .default_headers(headers)
+            .user_agent("FundPortfolio/1.0 (Homelab Linux)")
+            .connect_timeout(Duration::from_secs(10))
+            .timeout(Duration::from_secs(30))
             .pool_idle_timeout(Duration::from_secs(90))
             .pool_max_idle_per_host(10)
             .build()
