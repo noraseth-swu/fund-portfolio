@@ -27,8 +27,9 @@ impl SecClient {
             .user_agent("FundPortfolio/1.0 (Homelab Linux)")
             .connect_timeout(Duration::from_secs(10))
             .timeout(Duration::from_secs(30))
-            .pool_idle_timeout(Duration::from_secs(90))
-            .pool_max_idle_per_host(10)
+            .tcp_keepalive(Duration::from_secs(30))
+            .pool_idle_timeout(Duration::from_secs(45))
+            .pool_max_idle_per_host(5)
             .build()
             .expect("Failed to build HTTP client");
 
@@ -70,7 +71,21 @@ impl SecClient {
                 req = req.query(query);
             }
 
-            let resp = req.send().await?;
+            let resp = match req.send().await {
+                Ok(r) => r,
+                Err(e) => {
+                    retries += 1;
+                    if retries > max_retries {
+                        return Err(e.into());
+                    }
+                    tracing::warn!(
+                        "[SEC API Connect Error] Failed to send request to {} (attempt #{}/{}): {}. Retrying in 2s...",
+                        endpoint, retries, max_retries, e
+                    );
+                    sleep(Duration::from_secs(2)).await;
+                    continue;
+                }
+            };
 
             // ตรวจสอบกรณี Rate Limit เกิน (HTTP Status 429)
             if resp.status() == reqwest::StatusCode::TOO_MANY_REQUESTS {
