@@ -157,6 +157,26 @@ impl BackfillService {
                                     proj_id, err_str
                                 );
 
+                                // ส่งการแจ้งเตือนไปยัง Sentry หากติด Rate Limit 429 หรือ Network/Server Error
+                                if err_str.contains("429") || err_str.contains("500") || err_str.contains("502") || err_str.contains("503") || err_str.contains("timeout") {
+                                    sentry::with_scope(
+                                        |scope| {
+                                            scope.set_tag("service", "nav-backfill");
+                                            scope.set_tag("proj_id", &proj_id);
+                                            if let Some(ref abbr) = proj_abbr {
+                                                scope.set_tag("proj_abbr", abbr);
+                                            }
+                                            scope.set_extra("error_details", err_str.clone().into());
+                                        },
+                                        || {
+                                            sentry::capture_message(
+                                                &format!("[NAV Backfill Error] Fund {}: {}", proj_id, err_str),
+                                                sentry::Level::Error,
+                                            );
+                                        },
+                                    );
+                                }
+
                                 let _ = sqlx::query(
                                     r#"
                                     UPDATE nav_backfill_progress

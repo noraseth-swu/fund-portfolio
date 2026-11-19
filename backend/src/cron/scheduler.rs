@@ -109,6 +109,19 @@ impl DailyNavScheduler {
                                         )
                                         .await;
                                         tracing::error!("[Daily NAV Scheduler] Sync failed: {err_msg}");
+
+                                        sentry::with_scope(
+                                            |scope| {
+                                                scope.set_tag("service", "daily-nav-scheduler");
+                                                scope.set_extra("target_time", format!("{:02}:{:02} ICT", target_hour, target_minute).into());
+                                            },
+                                            || {
+                                                sentry::capture_message(
+                                                    &format!("[Daily NAV Sync Failed] {}", err_msg),
+                                                    sentry::Level::Error,
+                                                );
+                                            },
+                                        );
                                     }
                                 }
                             }
