@@ -14,6 +14,13 @@ static CURRENT_FUND_INFO: LazyLock<Arc<Mutex<Option<(String, Option<String>)>>>>
     LazyLock::new(|| Arc::new(Mutex::new(None)));
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct FailedFundSample {
+    pub proj_id: String,
+    pub proj_abbr_name: Option<String>,
+    pub error_log: Option<String>,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct BackfillStatus {
     pub is_running: bool,
     pub total_funds: i64,
@@ -24,6 +31,8 @@ pub struct BackfillStatus {
     pub current_proj_abbr: Option<String>,
     pub percent_completed: f64,
     pub last_updated_at: Option<String>,
+    pub last_error: Option<String>,
+    pub failed_samples: Vec<FailedFundSample>,
 }
 
 pub struct BackfillService;
@@ -56,13 +65,17 @@ impl BackfillService {
                     continue;
                 }
 
-                // ค้นหากองทุนถัดไปที่มีสถานะ PENDING หรือ FAILED (เรียงตาม Priority และ proj_id)
+                // ค้นหากองทุนถัดไป: จัดลำดับให้ PENDING มาก่อน FAILED เสมอ เพื่อไม่ให้กองทุนที่ติด Error วนลูปขัดขวางคิวอื่น
                 let next_target = sqlx::query_as::<_, (String, Option<String>)>(
                     r#"
                     SELECT proj_id, proj_abbr_name
                     FROM nav_backfill_progress
                     WHERE status IN ('PENDING', 'FAILED')
-                    ORDER BY priority ASC, updated_at ASC, proj_id ASC
+                    ORDER BY 
+                        CASE status WHEN 'PENDING' THEN 0 ELSE 1 END ASC,
+                        priority ASC, 
+                        updated_at ASC, 
+                        proj_id ASC
                     LIMIT 1
                     "#,
                 )
@@ -221,6 +234,27 @@ impl BackfillService {
             0.0
         };
 
+        let last_error: Option<String> = sqlx::query_scalar(
+            "SELECT error_log FROM nav_backfill_progress WHERE status = 'FAILED' AND error_log IS NOT NULL ORDER BY updated_at DESC LIMIT 1"
+        )
+        .fetch_optional(pool)
+        .await
+        .unwrap_or(None);
+
+        let failed_samples: Vec<FailedFundSample> = sqlx::query_as::<_, (String, Option<String>, Option<String>)>(
+            "SELECT proj_id, proj_abbr_name, error_log FROM nav_backfill_progress WHERE status = 'FAILED' AND error_log IS NOT NULL ORDER BY updated_at DESC LIMIT 5"
+        )
+        .fetch_all(pool)
+        .await
+        .unwrap_or_default()
+        .into_iter()
+        .map(|(proj_id, proj_abbr_name, error_log)| FailedFundSample {
+            proj_id,
+            proj_abbr_name,
+            error_log,
+        })
+        .collect();
+
         let current_lock = CURRENT_FUND_INFO.lock().await;
         let (current_proj_id, current_proj_abbr) = match &*current_lock {
             Some((pid, abbr)) => (Some(pid.clone()), abbr.clone()),
@@ -237,6 +271,8 @@ impl BackfillService {
             current_proj_abbr,
             percent_completed: (percent * 100.0).round() / 100.0,
             last_updated_at,
+            last_error,
+            failed_samples,
         })
     }
 
