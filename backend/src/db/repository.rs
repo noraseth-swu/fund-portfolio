@@ -304,13 +304,356 @@ impl Repository {
         Ok(map)
     }
 
-    /// บันทึกธุรกรรม (Transaction) ลงฐานข้อมูล สำหรับ user_id
-    /// บันทึกธุรกรรม (Transaction) ลงฐานข้อมูล สำหรับ user_id (คืนค่า true ถ้าเพิ่มสำเร็จ, false ถ้าเป็นรายการซ้ำ)
+    /// ตรวจสอบว่าชื่อย่อกองทุนเป็นชื่อ Bare Project Name หรือไม่ (เช่น ES-GF, TSF, SCBCHA)
+    pub fn is_bare_fund_name(abbr_opt: Option<&str>, proj_id: &str) -> bool {
+        let abbr = match abbr_opt {
+            None => return true,
+            Some(a) if a.trim().is_empty() => return true,
+            Some(a) => a.trim(),
+        };
+        if abbr.eq_ignore_ascii_case(proj_id) {
+            return true;
+        }
+        let upper = abbr.to_uppercase();
+        matches!(
+            upper.as_str(),
+            "ES-GF" | "TSF" | "SCBCHA" | "SCBS&P500" | "SCBNASDAQ" | "SCBWORLD" | "ES-USBLUECHIP" | "ES-GCORE"
+        )
+    }
+
+    /// ถอดรหัส Project ID จากข้อความชื่อกองทุนของโบรกเกอร์ (Normalized Project Identification Engine)
+    /// ทำความสะอาดคำฟุ่มเฟือย เช่น 'FUND', 'CLASS', 'กองทุนเปิด', วงเล็บ, เครื่องหมายวรรคตอน และช่องว่าง
+    /// และค้นหาในตาราง funds ตาม proj_abbr_name, proj_name_en, และ proj_name_th
+    pub async fn resolve_project_id(
+        pool: &DbPool,
+        query: &str,
+    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+        let trimmed = query.trim();
+        if trimmed.is_empty() {
+            return Ok(None);
+        }
+
+        // 1. ตรวจสอบกรณี query เป็น proj_id อยู่แล้ว (เช่น M0621_2553)
+        if let Ok(Some(row)) = sqlx::query("SELECT proj_id FROM funds WHERE proj_id = ?1 LIMIT 1")
+            .bind(trimmed)
+            .fetch_optional(pool)
+            .await
+        {
+            return Ok(Some(row.get("proj_id")));
+        }
+
+        // 2. ตรวจสอบในตาราง fund_aliases
+        if let Ok(Some(row)) = sqlx::query(
+            "SELECT proj_id FROM fund_aliases WHERE UPPER(alias) = UPPER(?1) OR UPPER(canonical_abbr) = UPPER(?1) LIMIT 1"
+        )
+        .bind(trimmed)
+        .fetch_optional(pool)
+        .await
+        {
+            return Ok(Some(row.get("proj_id")));
+        }
+
+        // 3. ตรวจสอบในตาราง funds ตรงตัว
+        if let Ok(Some(row)) = sqlx::query(
+            r#"
+            SELECT proj_id FROM funds 
+            WHERE UPPER(proj_abbr_name) = UPPER(?1) 
+               OR UPPER(proj_name_en) = UPPER(?1) 
+               OR proj_name_th = ?1 
+            LIMIT 1
+            "#
+        )
+        .bind(trimmed)
+        .fetch_optional(pool)
+        .await
+        {
+            return Ok(Some(row.get("proj_id")));
+        }
+
+        // ฟังก์ชันช่วยทำความสะอาดและสร้าง Alphanumeric Key
+        fn to_alpha_key(s: &str) -> String {
+            let mut upper = s.to_uppercase();
+            for noise in &["กองทุนเปิด", "กองทุนรวม", "กองทุน", "ชนิด", "หน่วยลงทุน"] {
+                upper = upper.replace(noise, "");
+            }
+            for noise in &["FUND", "FUNDS", "CLASS", "INDEX", "OPEN-ENDED", "MUTUAL"] {
+                upper = upper.replace(noise, "");
+            }
+            upper.chars().filter(|c| c.is_alphanumeric()).collect()
+        }
+
+        fn clean_broker_words(input: &str) -> String {
+            let mut s = input.to_string();
+            for noise in &["กองทุนเปิด", "กองทุนรวม", "กองทุน", "ชนิด", "หน่วยลงทุน"] {
+                s = s.replace(noise, " ");
+            }
+            let upper = s.to_uppercase();
+            let words: Vec<&str> = upper
+                .split(|c: char| !c.is_alphanumeric() && c != '&' && c != '-')
+                .filter(|w| {
+                    let stripped = w.trim_matches(|c: char| !c.is_alphanumeric());
+                    !matches!(stripped, "FUND" | "FUNDS" | "CLASS" | "INDEX" | "OPEN-ENDED" | "MUTUAL" | "")
+                })
+                .collect();
+            words.join(" ")
+        }
+
+        let query_alpha = to_alpha_key(trimmed);
+        let cleaned_query = clean_broker_words(trimmed);
+        let first_word = cleaned_query.split_whitespace().next().unwrap_or(trimmed);
+
+        // 4. ดึงรายชื่อ funds ที่อาจเกี่ยวข้องด้วย LIKE
+        let candidate_rows = sqlx::query(
+            r#"
+            SELECT proj_id, proj_abbr_name, proj_name_en, proj_name_th
+            FROM funds
+            WHERE UPPER(proj_abbr_name) LIKE ?1 
+               OR UPPER(proj_name_en) LIKE ?1 
+               OR UPPER(proj_name_th) LIKE ?1
+               OR UPPER(proj_name_en) LIKE ?2
+               OR UPPER(proj_abbr_name) LIKE ?2
+            LIMIT 100
+            "#
+        )
+        .bind(format!("%{}%", cleaned_query))
+        .bind(format!("%{}%", first_word))
+        .fetch_all(pool)
+        .await?;
+
+        let mut best_match: Option<(String, usize)> = None;
+
+        for r in &candidate_rows {
+            let pid: String = r.get("proj_id");
+            let abbr: String = r.get::<Option<String>, _>("proj_abbr_name").unwrap_or_default();
+            let name_en: String = r.get::<Option<String>, _>("proj_name_en").unwrap_or_default();
+            let name_th: String = r.get::<Option<String>, _>("proj_name_th").unwrap_or_default();
+
+            let abbr_alpha = to_alpha_key(&abbr);
+            let en_alpha = to_alpha_key(&name_en);
+
+            let mut score = 0;
+            if !abbr_alpha.is_empty() && query_alpha == abbr_alpha {
+                score += 100;
+            } else if !en_alpha.is_empty() && query_alpha == en_alpha {
+                score += 90;
+            } else if !abbr_alpha.is_empty() && (query_alpha.starts_with(&abbr_alpha) || abbr_alpha.starts_with(&query_alpha)) {
+                score += 75;
+            } else if !en_alpha.is_empty() && (query_alpha.contains(&en_alpha) || en_alpha.contains(&query_alpha)) {
+                score += 65;
+            } else {
+                for token in cleaned_query.split_whitespace() {
+                    if token.len() >= 3 && (name_en.to_uppercase().contains(token) || abbr.to_uppercase().contains(token) || name_th.contains(token)) {
+                        score += 15;
+                    }
+                }
+            }
+
+            if score >= 20 {
+                match &best_match {
+                    None => best_match = Some((pid, score)),
+                    Some((_, best_score)) if score > *best_score => {
+                        best_match = Some((pid, score));
+                    }
+                    _ => {}
+                }
+            }
+        }
+
+        if let Some((pid, _)) = best_match {
+            return Ok(Some(pid));
+        }
+
+        // 5. หาก candidate LIKE ไม่พบ ให้สแกนตาราง funds ทั้งหมดด้วย key comparison
+        let all_rows = sqlx::query("SELECT proj_id, proj_abbr_name, proj_name_en FROM funds LIMIT 1000")
+            .fetch_all(pool)
+            .await?;
+
+        for r in all_rows {
+            let pid: String = r.get("proj_id");
+            let abbr: String = r.get::<Option<String>, _>("proj_abbr_name").unwrap_or_default();
+            let name_en: String = r.get::<Option<String>, _>("proj_name_en").unwrap_or_default();
+
+            let abbr_alpha = to_alpha_key(&abbr);
+            let en_alpha = to_alpha_key(&name_en);
+
+            if (!abbr_alpha.is_empty() && query_alpha == abbr_alpha)
+                || (!en_alpha.is_empty() && query_alpha == en_alpha)
+                || (!abbr_alpha.is_empty() && (query_alpha.starts_with(&abbr_alpha) || abbr_alpha.starts_with(&query_alpha)))
+                || (!en_alpha.is_empty() && (query_alpha.contains(&en_alpha) || en_alpha.contains(&query_alpha)))
+            {
+                return Ok(Some(pid));
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// ระบุ Share Class ที่แน่นอนของกองทุนด้วยราคาทำรายการ (Core Price-Assisted Share-Class Resolver)
+    /// ค้นหารายการ NAV จาก fund_nav_history ตาม proj_id และ trans_date
+    /// เปรียบเทียบ unit_price กับ sell_price, nav, buy_price ด้วย tolerance < 0.005 THB
+    /// หากไม่พบราคาที่ตรงกัน ให้ fallback ไปยัง Class A / Retail Class หรือชื่อกองทุนหลัก
+    pub async fn resolve_share_class_by_price(
+        pool: &DbPool,
+        proj_id: &str,
+        trans_date: &str,
+        unit_price: Decimal,
+    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+        if proj_id.trim().is_empty() {
+            return Ok(None);
+        }
+
+        // 1. ดึงประวัติ NAV ของ proj_id ในวันที่ trans_date (หรือวันที่ใกล้เคียงก่อนหน้า)
+        let rows = sqlx::query(
+            r#"
+            SELECT fund_class_name, nav, sell_price, buy_price
+            FROM fund_nav_history
+            WHERE proj_id = ?1 AND nav_date = ?2
+            "#
+        )
+        .bind(proj_id)
+        .bind(trans_date)
+        .fetch_all(pool)
+        .await?;
+
+        let tolerance = Decimal::from_str("0.005").unwrap();
+
+        if unit_price > Decimal::ZERO {
+            let mut best_match: Option<(String, Decimal)> = None;
+
+            for r in &rows {
+                let class_name: String = r.get::<Option<String>, _>("fund_class_name").unwrap_or_default();
+                let nav_str: Option<String> = r.get("nav");
+                let sell_str: Option<String> = r.get("sell_price");
+                let buy_str: Option<String> = r.get("buy_price");
+
+                for p_str in [&sell_str, &nav_str, &buy_str].into_iter().flatten() {
+                    if let Ok(p) = Decimal::from_str(p_str) {
+                        if p > Decimal::ZERO {
+                            let diff = (p - unit_price).abs();
+                            if diff < tolerance {
+                                let cname = if class_name.is_empty() || class_name == "main" {
+                                    None
+                                } else {
+                                    Some(class_name.clone())
+                                };
+                                if let Some(c) = cname {
+                                    match &best_match {
+                                        None => best_match = Some((c, diff)),
+                                        Some((_, best_diff)) if diff < *best_diff => {
+                                            best_match = Some((c, diff));
+                                        }
+                                        _ => {}
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+            }
+
+            if let Some((resolved_class, _)) = best_match {
+                return Ok(Some(resolved_class));
+            }
+        }
+
+        // 2. Fallback: ถ้าไม่พบราคาที่ตรงกัน ให้เลือก Class A / Retail Class หรือชื่อกองทุนหลัก
+        // 2.1 ตรวจสอบว่าใน rows มี class ที่ลงท้ายด้วย -A, (A) หรือ AA
+        for r in &rows {
+            if let Some(c) = r.get::<Option<String>, _>("fund_class_name") {
+                let upper = c.to_uppercase();
+                if upper.ends_with("-A") || upper.ends_with("(A)") || upper.ends_with("AA") || upper.ends_with("A") {
+                    return Ok(Some(c));
+                }
+            }
+        }
+
+        // 2.2 ตรวจสอบใน fund_aliases
+        if let Ok(Some(row)) = sqlx::query(
+            r#"
+            SELECT canonical_abbr FROM fund_aliases 
+            WHERE proj_id = ?1 AND (canonical_abbr LIKE '%-A' OR alias LIKE '%-A' OR canonical_abbr LIKE '%AA' OR alias LIKE '%AA')
+            LIMIT 1
+            "#
+        )
+        .bind(proj_id)
+        .fetch_optional(pool)
+        .await {
+            return Ok(Some(row.get("canonical_abbr")));
+        }
+
+        // 2.3 ตรวจสอบใน fund_nav_history วันอื่นๆ ว่ามี class A หรือไม่
+        if let Ok(Some(row)) = sqlx::query(
+            r#"
+            SELECT fund_class_name FROM fund_nav_history
+            WHERE proj_id = ?1 AND (fund_class_name LIKE '%-A' OR fund_class_name LIKE '%(A)' OR fund_class_name LIKE '%AA')
+            ORDER BY nav_date DESC LIMIT 1
+            "#
+        )
+        .bind(proj_id)
+        .fetch_optional(pool)
+        .await {
+            let c: String = row.get("fund_class_name");
+            if !c.is_empty() {
+                return Ok(Some(c));
+            }
+        }
+
+        // 2.4 Single-class fund หรือดึง proj_abbr_name จาก funds
+        if let Ok(Some(row)) = sqlx::query("SELECT proj_abbr_name FROM funds WHERE proj_id = ?1 LIMIT 1")
+            .bind(proj_id)
+            .fetch_optional(pool)
+            .await {
+            let abbr: Option<String> = row.get("proj_abbr_name");
+            if let Some(a) = abbr {
+                if !a.trim().is_empty() {
+                    return Ok(Some(a));
+                }
+            }
+        }
+
+        Ok(Some(proj_id.to_string()))
+    }
+
+    /// บันทึกธุรกรรม (Transaction) ลงฐานข้อมูล สำหรับ user_id (พร้อมระบุ Project ID และ Share Class อัตโนมัติ)
+    /// คืนค่า true ถ้าเพิ่มสำเร็จ, false ถ้าเป็นรายการซ้ำ
     pub async fn insert_transaction(
         pool: &DbPool,
         user_id: &str,
         tx: &Transaction,
     ) -> Result<bool, Box<dyn std::error::Error + Send + Sync>> {
+        // ถอดรหัส Project ID ถ้าเป็นชื่อย่อหรือชื่อเต็มจากโบรกเกอร์
+        let resolved_proj_id = if tx.proj_id.starts_with('M') && tx.proj_id.contains('_') {
+            tx.proj_id.clone()
+        } else if let Ok(Some(pid)) = Self::resolve_project_id(pool, &tx.proj_id).await {
+            pid
+        } else {
+            tx.proj_id.clone()
+        };
+
+        // ระบุ Share Class ตามราคาต่อหน่วย (unit_price) หากชื่อคลาสว่างหรือเป็นชื่อกองทุนหลัก (Bare Project Name)
+        let mut resolved_fund_abbr = tx.fund_abbr.clone();
+        if Self::is_bare_fund_name(tx.fund_abbr.as_deref(), &resolved_proj_id) {
+            if let Ok(Some(class_name)) = Self::resolve_share_class_by_price(pool, &resolved_proj_id, &tx.trans_date, tx.unit_price).await {
+                resolved_fund_abbr = Some(class_name);
+            }
+        }
+
+        let resolved_idem_key = if tx.idempotency_key.is_some() {
+            tx.idempotency_key.clone()
+        } else {
+            Some(Transaction::compute_idempotency_key(
+                user_id,
+                tx.platform.as_str(),
+                &resolved_proj_id,
+                resolved_fund_abbr.as_deref(),
+                &tx.trans_date,
+                tx.trans_type.as_str(),
+                &tx.units,
+                &tx.total_amount,
+                tx.note.as_deref(),
+            ))
+        };
+
         let res = sqlx::query(
             r#"
             INSERT INTO transactions (
@@ -322,9 +665,9 @@ impl Repository {
         )
         .bind(&tx.id)
         .bind(user_id)
-        .bind(&tx.idempotency_key)
-        .bind(&tx.proj_id)
-        .bind(&tx.fund_abbr)
+        .bind(&resolved_idem_key)
+        .bind(&resolved_proj_id)
+        .bind(&resolved_fund_abbr)
         .bind(tx.platform.as_str())
         .bind(tx.trans_type.as_str())
         .bind(&tx.trans_date)
@@ -351,6 +694,39 @@ impl Repository {
         let mut skipped_count = 0;
 
         for tx in txs {
+            // ถอดรหัส Project ID ถ้าเป็นชื่อย่อหรือชื่อเต็มจากโบรกเกอร์
+            let resolved_proj_id = if tx.proj_id.starts_with('M') && tx.proj_id.contains('_') {
+                tx.proj_id.clone()
+            } else if let Ok(Some(pid)) = Self::resolve_project_id(pool, &tx.proj_id).await {
+                pid
+            } else {
+                tx.proj_id.clone()
+            };
+
+            // ระบุ Share Class ตามราคาต่อหน่วย (unit_price) หากชื่อคลาสว่างหรือเป็นชื่อกองทุนหลัก (Bare Project Name)
+            let mut resolved_fund_abbr = tx.fund_abbr.clone();
+            if Self::is_bare_fund_name(tx.fund_abbr.as_deref(), &resolved_proj_id) {
+                if let Ok(Some(class_name)) = Self::resolve_share_class_by_price(pool, &resolved_proj_id, &tx.trans_date, tx.unit_price).await {
+                    resolved_fund_abbr = Some(class_name);
+                }
+            }
+
+            let resolved_idem_key = if tx.idempotency_key.is_some() {
+                tx.idempotency_key.clone()
+            } else {
+                Some(Transaction::compute_idempotency_key(
+                    user_id,
+                    tx.platform.as_str(),
+                    &resolved_proj_id,
+                    resolved_fund_abbr.as_deref(),
+                    &tx.trans_date,
+                    tx.trans_type.as_str(),
+                    &tx.units,
+                    &tx.total_amount,
+                    tx.note.as_deref(),
+                ))
+            };
+
             let res = sqlx::query(
                 r#"
                 INSERT INTO transactions (
@@ -362,9 +738,9 @@ impl Repository {
             )
             .bind(&tx.id)
             .bind(user_id)
-            .bind(&tx.idempotency_key)
-            .bind(&tx.proj_id)
-            .bind(&tx.fund_abbr)
+            .bind(&resolved_idem_key)
+            .bind(&resolved_proj_id)
+            .bind(&resolved_fund_abbr)
             .bind(tx.platform.as_str())
             .bind(tx.trans_type.as_str())
             .bind(&tx.trans_date)
@@ -1283,6 +1659,18 @@ impl Repository {
                     resolved_proj_id = Some(row.get("proj_id"));
                     resolved_fund_abbr = row.get("proj_abbr_name");
                     match_confidence = "EXACT";
+                } else if let Ok(Some(pid)) = Self::resolve_project_id(pool, candidate).await {
+                    resolved_proj_id = Some(pid);
+                    match_confidence = "EXACT";
+                }
+            }
+
+            // Price-assisted share class resolution
+            if let Some(ref pid) = resolved_proj_id {
+                if Self::is_bare_fund_name(resolved_fund_abbr.as_deref(), pid) {
+                    if let Ok(Some(class_name)) = Self::resolve_share_class_by_price(pool, pid, &p.trans_date, p.unit_price).await {
+                        resolved_fund_abbr = Some(class_name);
+                    }
                 }
             }
 

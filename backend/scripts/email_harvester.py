@@ -1089,7 +1089,44 @@ def match_fund_with_confidence(conn, fund_code: str) -> dict:
             "match_confidence": "FUZZY"
         }
 
-    # 4. LIKE match on proj_name_en / proj_name_th -> FUZZY
+    # 4. Normalized broker cleaning (stripping FUND, CLASS, กองทุนเปิด, brackets, punctuation)
+    cleaned_input = clean_code
+    for sw in ["กองทุนเปิด", "กองทุนรวม", "กองทุน", "ชนิด", "หน่วยลงทุน"]:
+        cleaned_input = cleaned_input.replace(sw, " ")
+    cleaned_words = [w for w in re.split(r'[\s\-_(),.\[\]/]+', cleaned_input) if w.upper() not in {"FUND", "FUNDS", "CLASS", "INDEX", "OPEN", "ENDED", "MUTUAL", ""}]
+    cleaned_str = " ".join(cleaned_words).strip()
+    alpha_key = re.sub(r'[^A-Z0-9]', '', cleaned_str.upper())
+
+    if cleaned_str:
+        c.execute("""
+            SELECT proj_id, proj_abbr_name, proj_name_th, proj_name_en
+            FROM funds
+            WHERE UPPER(proj_abbr_name) = ? OR UPPER(proj_name_en) = ? OR proj_name_th = ?
+               OR UPPER(proj_abbr_name) LIKE ? OR UPPER(proj_name_en) LIKE ? OR proj_name_th LIKE ?
+            LIMIT 50
+        """, (cleaned_str.upper(), cleaned_str.upper(), cleaned_str,
+              f"%{cleaned_str}%", f"%{cleaned_str}%", f"%{cleaned_str}%"))
+        rows = c.fetchall()
+        for r in rows:
+            r_abbr = (r[1] or "").upper()
+            r_en = (r[3] or "").upper()
+            r_abbr_alpha = re.sub(r'[^A-Z0-9]', '', r_abbr)
+            r_en_alpha = re.sub(r'[^A-Z0-9]', '', r_en)
+            if alpha_key and (alpha_key == r_abbr_alpha or alpha_key == r_en_alpha or alpha_key in r_en_alpha or r_abbr_alpha in alpha_key):
+                return {
+                    "proj_id": r[0], "fund_abbr": r[1] or clean_code,
+                    "fund_name_th": r[2], "fund_name_en": r[3],
+                    "match_confidence": "FUZZY"
+                }
+        if rows:
+            r = rows[0]
+            return {
+                "proj_id": r[0], "fund_abbr": r[1] or clean_code,
+                "fund_name_th": r[2], "fund_name_en": r[3],
+                "match_confidence": "FUZZY"
+            }
+
+    # 5. LIKE match on proj_name_en / proj_name_th -> FUZZY
     c.execute("""SELECT proj_id, proj_abbr_name, proj_name_th, proj_name_en FROM funds
                  WHERE LOWER(proj_name_en) LIKE LOWER(?) OR LOWER(proj_name_th) LIKE LOWER(?)
                  LIMIT 1""", (f"%{clean_code}%", f"%{clean_code}%"))
@@ -1101,7 +1138,7 @@ def match_fund_with_confidence(conn, fund_code: str) -> dict:
             "match_confidence": "FUZZY"
         }
 
-    # 5. Not found -> NONE
+    # 6. Not found -> NONE
     return {
         "proj_id": None, "fund_abbr": clean_code,
         "fund_name_th": None, "fund_name_en": None,
@@ -1127,6 +1164,34 @@ def insert_pending(conn, user_id, sync_batch_id, platform, raw_fund_name, tx, so
     # NAV lookup from SEC history (matching sell_price for BUY and buy_price for SELL)
     nav_val, nav_source = lookup_nav_for_date(conn, proj_id, trans_date, trans_type)
     unit_price = float(tx.get("unit_price") or 0.0)
+
+    # Core Price-Assisted Share-Class Resolution
+    if proj_id and unit_price > 0:
+        try:
+            c = conn.cursor()
+            c.execute("""
+                SELECT fund_class_name, nav, sell_price, buy_price
+                FROM fund_nav_history
+                WHERE proj_id = ? AND nav_date = ?
+            """, (proj_id, trans_date))
+            for r in c.fetchall():
+                cname = r[0]
+                matched = False
+                for p_str in r[1:]:
+                    if p_str:
+                        try:
+                            p_val = float(p_str)
+                            if p_val > 0 and abs(p_val - unit_price) < 0.005:
+                                if cname and cname != "main":
+                                    fund_abbr = cname
+                                    matched = True
+                                    break
+                        except (ValueError, TypeError):
+                            pass
+                if matched:
+                    break
+        except Exception as pe:
+            logger.debug("Price-assisted resolution skipped: %s", pe)
 
     # Sanity check: If SEC historical NAV is available and unit_price from PDF is wildly off (>20% or >500)
     if nav_val is not None:
