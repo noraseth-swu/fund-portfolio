@@ -1425,3 +1425,54 @@ Phase 5 Execution Sequence:
    - **Historical NAV Backfill:** `BackfillService` pacing 2,419 funds at 2.5s intervals with resumable checkpointing via `nav_backfill_progress`.
 4. **Next Strategic Focus:**
    - **Phase 3:** Portfolio Analytics & Visualizations (Milestone 3.1: Historical Net Worth Growth Chart, Milestone 3.2: Asset Allocation Donut Charts).
+
+---
+
+# Slice 36: Dynamic SEC Master & Price-Assisted Share-Class Resolution (Eliminating Static Dicts)
+
+## 1. Problem Statement & Motivation
+- **The Scalability Failure of Static Dicts**: Maintaining manual alias mappings (`KNOWN_FUND_ALIASES` in `email_harvester.py`, manual overrides in `fund_aliases.json`) requires human code changes whenever an investor buys a new fund or share class.
+- **Missing Class Problem in Confirmation Notes**: Brokers (TTB, SCB, KBank) routinely print base fund names (e.g. `EASTSPRING GIS GLOBAL BOND FUND`, `TISCO STRATEGIC FUND`) without the specific share class (`-A`, `-D`, `-SSF`).
+- **Goal**: Completely eliminate all static dictionaries. Resolve share classes dynamically and scalably using SEC Open API Master Data and Historical Transaction Price Matching ("Dynamic Price-Assisted Resolution").
+
+## 2. Core Architecture: The 4-Stage Dynamic Resolution Pipeline
+
+```
+Confirmation Note / Email Statement
+(fund_name, trans_date, unit_price, total_amount, units)
+              │
+              ▼
+Stage 1: Normalized Project Identification
+Match cleaned name against SEC `funds` (proj_abbr_name, proj_name_en, proj_name_th)
+              │
+              ▼
+Stage 2: Daily NAV Class Slice Extraction
+Query `fund_nav_history` for all distinct `fund_class_name` on `trans_date`
+              │
+              ▼
+Stage 3: Dynamic Price-Assisted Matching
+Compare slip `unit_price` (or total_amount / units) against each class `sell_price` / `nav`
+Tolerance: |slip_price - class_price| < 0.005 THB
+              │
+        ┌─────┴─────┐
+        ▼           ▼
+   Exact Match   No / Ambiguous Match
+        │           │
+        │           ▼
+        │     Stage 4: Heuristic Class Tiering & Review UI
+        │     - Tier 1: Class A (Retail Accumulation - default)
+        │     - Tier 2: Class D (Dividend)
+        │     - Tier 3: SSF/RMF/ThaiESG (only if keyword in text)
+        │     - Interactive candidate dropdown in Review Modal
+        ▼           ▼
+  Exact Resolved Class (e.g. ES-GF-A, TSF-A, SCBS&P500E)
+```
+
+## 3. Dependency Graph & Tasks Breakdown
+- **Task 36.1 (Regex & Normalized Project Matcher)**: Strip boilerplate words (FUND, CLASS, ACCUMULATION, spaces, dashes) and match against SEC master `funds`.
+- **Task 36.2 (Price-Assisted Share-Class Resolver)**: Compare transaction `unit_price` with daily NAV of candidate share classes on `trans_date`.
+- **Task 36.3 (Heuristic Tiering & Fallback Engine)**: Default to Class A (Accumulation), followed by Class D and tax classes.
+- **Task 36.4 (Complete Deprecation & Deletion of Static Dicts)**: Purge `KNOWN_FUND_ALIASES` from `email_harvester.py` and remove manual overrides from `generate_aliases.py`.
+- **Task 36.5 (Interactive Multi-Class Selector in Staged Review)**: Display candidate classes with NAVs in `TransactionReviewModal.tsx` for easy one-click verification.
+- **Task 36.6 (End-to-End Test Suite)**: Unit and integration tests verifying price-assisted resolution on arbitrary unseen funds.
+

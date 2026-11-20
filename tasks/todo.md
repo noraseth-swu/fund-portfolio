@@ -475,6 +475,95 @@
 
 ---
 
+## Slice 36: Dynamic SEC Master & Price-Assisted Share-Class Resolution (Eliminating Static Dicts)
+
+### Task 36.1: Normalized Project Identification Engine (Regex & Master Search)
+**Description:** Implement dynamic project identification that cleans broker statement fund names (removing noise words like 'FUND', 'CLASS', 'กองทุนเปิด', punctuation, whitespace) and matches against SEC `funds` master table (`proj_abbr_name`, `proj_name_en`, `proj_name_th`, and base tickers) without relying on any hardcoded dictionary.
+**Acceptance criteria:**
+- [ ] Broker strings such as "EASTSPRING GIS GLOBAL BOND FUND", "TISCO STRATEGIC FUND", "SCB S&P 500 INDEX FUND" reliably resolve to their SEC `proj_id` (`M0621_2553`, `M0011_2547`, `M0643_2555`).
+- [ ] No static lookup table is accessed for project matching.
+**Verification:**
+- [ ] Tests pass: `cargo test --bin backend test_dynamic_project_identifier`
+- [ ] Manual check: verify resolution across 20 diverse fund names from TTB, SCB, KBank statements.
+**Dependencies:** None
+**Files likely touched:**
+- `backend/src/db/repository.rs`
+- `backend/scripts/email_harvester.py`
+**Estimated scope:** Medium (2-3 files)
+
+### Task 36.2: Core Price-Assisted Share-Class Resolver
+**Description:** Build the core algorithmic resolver that takes `proj_id`, `trans_date`, and transaction `unit_price` (or `total_amount / units`), retrieves all distinct `fund_class_name` daily NAV records from `fund_nav_history` on `trans_date`, and performs mathematical price matching ($|unit\_price - class\_price| < 0.005$).
+**Acceptance criteria:**
+- [ ] Transactions with missing class suffixes (e.g. `ES-GF` @ 12.1120 on 2024-02-28) automatically resolve to `ES-GF-A` with 100% precision.
+- [ ] Transactions for multi-class funds (e.g. `TSF` @ 71.6857 on 2026-10-28) automatically resolve to `TSF-A`.
+- [ ] Single-class funds gracefully fall back to base project abbr or `'main'` without failure.
+**Verification:**
+- [ ] Tests pass: `cargo test --bin backend test_price_assisted_share_class_resolution`
+- [ ] Manual check: verify against historical TTB confirmation notes.
+**Dependencies:** Task 36.1
+**Files likely touched:**
+- `backend/src/db/repository.rs`
+- `backend/src/domain/engine.rs`
+- `backend/src/api/handlers.rs`
+**Estimated scope:** Medium (3 files)
+
+### Checkpoint: Dynamic Resolver Engine Foundation
+- [ ] Both Project Identification and Price Matching resolve accurately on database queries.
+- [ ] All backend tests pass clean (`cargo test`).
+
+### Task 36.3: Heuristic Tiering Fallback & Off-Market Resolution
+**Description:** Implement hierarchical tiering when exact price matching is impossible (e.g. transactions executed on non-trading days, holidays, or statement prices with embedded transaction fees).
+**Acceptance criteria:**
+- [ ] Default ranking prioritizes: Tier 1 (Retail Accumulation Class `-A` / base) > Tier 2 (Dividend Class `-D`) > Tier 3 (Tax classes `SSF`/`RMF`/`ThaiESG`).
+- [ ] Tax classes (`SSF`, `RMF`, `ThaiESG`) are strictly barred from auto-resolution unless explicit tax keywords appear in the document text or account profile.
+- [ ] Assign confidence score (`EXACT_PRICE_MATCH`, `HEURISTIC_TIER_A`, `AMBIGUOUS_MULTI_CLASS`).
+**Verification:**
+- [ ] Tests pass: `cargo test --bin backend test_heuristic_class_tiering`
+- [ ] Manual check: simulate holiday transaction date with multiple share classes.
+**Dependencies:** Task 36.2
+**Files likely touched:**
+- `backend/src/db/repository.rs`
+- `backend/src/domain/engine.rs`
+**Estimated scope:** Small (2 files)
+
+### Task 36.4: Complete Deprecation & Removal of Static Dictionaries
+**Description:** Completely eradicate hardcoded dictionary maps (`KNOWN_FUND_ALIASES` in `email_harvester.py`, manual static entries in `generate_aliases.py`, and legacy dicts). Re-route harvester and parser flows strictly through the dynamic SEC master and price resolver.
+**Acceptance criteria:**
+- [ ] `KNOWN_FUND_ALIASES` dictionary removed from `backend/scripts/email_harvester.py`.
+- [ ] `generate_aliases.py` only extracts from official SEC PDFs and database, with zero manual hardcoded alias blocks.
+- [ ] Harvester successfully parses and imports statements for unseen funds without code changes.
+**Verification:**
+- [ ] Tests pass: `python backend/scripts/test_harvester.py`
+- [ ] Manual check: `git grep "KNOWN_FUND_ALIASES"` returns zero occurrences in application logic.
+**Dependencies:** Tasks 36.1, 36.2, 36.3
+**Files likely touched:**
+- `backend/scripts/email_harvester.py`
+- `backend/scripts/generate_aliases.py`
+- `backend/scripts/fund_aliases.json`
+**Estimated scope:** Medium (3 files)
+
+### Task 36.5: Interactive Multi-Class Review UX in Frontend
+**Description:** Enhance `TransactionReviewModal.tsx` so that when a staged transaction has multiple candidate share classes or ambiguous confidence, the UI displays an interactive Share Class selector showing candidate classes alongside their actual NAV on `trans_date`.
+**Acceptance criteria:**
+- [ ] User can view candidate classes (e.g. `ES-GF-A` vs `ES-GF-D`) and switch with a single click in the Staged Review table.
+- [ ] Selected class updates `fund_abbr` and recalculates staged metrics immediately.
+**Verification:**
+- [ ] Tests pass: `npm run test` in `frontend` (`TransactionReviewModal.test.tsx`)
+- [ ] Build succeeds: `npm run build` in `frontend`
+- [ ] Manual check: open Review Modal and verify class dropdown for multi-class funds.
+**Dependencies:** Task 36.3
+**Files likely touched:**
+- `frontend/src/components/TransactionReviewModal.tsx`
+- `frontend/src/lib/types.ts`
+**Estimated scope:** Small to Medium (2 files)
+
+### Checkpoint: End-to-End System Integrity
+- [ ] All static dictionaries purged from codebase.
+- [ ] Dynamic resolution pipeline passes all tests across backend and frontend.
+- [ ] Staged import review UX allows intuitive user override when needed.
+
+---
+
 ## Backlog & Future Enhancements (ยังไม่ต้องทำ)
 - [ ] **Settings Modal & Toast i18n Localization (TH / EN):**
   - รองรับการสลับภาษา (TH/EN) ใน `SettingsModal.tsx` ตามปุ่มสลับภาษาบน Navbar:
