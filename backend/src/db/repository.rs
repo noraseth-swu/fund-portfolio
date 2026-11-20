@@ -924,11 +924,17 @@ impl Repository {
                   OR fund_class_name = ?3
                   OR fund_class_name = (SELECT canonical_abbr FROM fund_aliases WHERE alias = ?3 LIMIT 1)
                   OR fund_class_name = (SELECT proj_abbr_name FROM funds WHERE proj_id = ?1 LIMIT 1)
+                  OR fund_class_name = 'main'
                   OR fund_class_name = ''
               )
               AND (CAST(sell_price AS REAL) > 0 OR CAST(nav AS REAL) > 0)
             ORDER BY 
-              (CASE WHEN fund_class_name = ?3 OR fund_class_name = (SELECT canonical_abbr FROM fund_aliases WHERE alias = ?3 LIMIT 1) THEN 1 ELSE 2 END),
+              (CASE 
+                  WHEN fund_class_name = ?3 OR fund_class_name = (SELECT canonical_abbr FROM fund_aliases WHERE alias = ?3 LIMIT 1) THEN 1 
+                  WHEN fund_class_name = (SELECT proj_abbr_name FROM funds WHERE proj_id = ?1 LIMIT 1) THEN 2
+                  WHEN fund_class_name = 'main' OR fund_class_name = '' THEN 3
+                  ELSE 4 
+               END) ASC,
               nav_date DESC
             LIMIT 1
             "#,
@@ -1031,11 +1037,18 @@ impl Repository {
                   OR fund_class_name = ?3
                   OR fund_class_name = (SELECT canonical_abbr FROM fund_aliases WHERE alias = ?3 LIMIT 1)
                   OR fund_class_name = (SELECT proj_abbr_name FROM funds WHERE proj_id = ?1 LIMIT 1)
+                  OR fund_class_name = 'main'
+                  OR fund_class_name = ''
               )
               AND (CAST(sell_price AS REAL) > 0 OR CAST(nav AS REAL) > 0)
             ORDER BY 
               nav_date ASC,
-              (CASE WHEN fund_class_name = ?3 OR fund_class_name = (SELECT canonical_abbr FROM fund_aliases WHERE alias = ?3 LIMIT 1) THEN 1 ELSE 2 END)
+              (CASE 
+                  WHEN fund_class_name = ?3 OR fund_class_name = (SELECT canonical_abbr FROM fund_aliases WHERE alias = ?3 LIMIT 1) THEN 1 
+                  WHEN fund_class_name = (SELECT proj_abbr_name FROM funds WHERE proj_id = ?1 LIMIT 1) THEN 2
+                  WHEN fund_class_name = 'main' OR fund_class_name = '' THEN 3
+                  ELSE 4 
+               END) ASC
             "#,
         )
         .bind(&target_proj_id)
@@ -1049,7 +1062,7 @@ impl Repository {
             let date: String = r.get("nav_date");
             let nav: String = r.get("effective_nav");
             if nav != "0" && nav != "0.0000" && !nav.is_empty() {
-                map.insert(date, nav);
+                map.entry(date).or_insert(nav);
             }
         }
 
@@ -2083,5 +2096,75 @@ mod tests {
         let ttb_reset = reset.iter().find(|b| b.key == "TTB").unwrap();
         assert!(ttb_reset.enabled, "TTB should be re-enabled after reset");
         assert_eq!(ttb_reset.sender_emails.len(), 1);
+    }
+
+    #[tokio::test]
+    async fn test_nav_queries_single_class_main_fallback() {
+        let pool = init_db("sqlite::memory:").await.unwrap();
+        let proj_id = "M0201_2564";
+
+        // 1. Seed single-class fund like TSP4-EXPLORER where SEC NAV records use fund_class_name = 'main'
+        sqlx::query(
+            "INSERT INTO funds (proj_id, proj_abbr_name, proj_name_th, proj_name_en, last_nav, last_nav_date)
+             VALUES (?1, 'TSP4-EXPLORER', 'กองทุนเปิด ทิสโก้ สเปเชียล พลัส 4', 'TISCO Special Plus 4', '12.0018', '2023-11-30')"
+        )
+        .bind(proj_id)
+        .execute(&pool)
+        .await
+        .unwrap();
+
+        let nav_items = vec![
+            crate::sec::models::DailyNavInfo {
+                proj_id: proj_id.to_string(),
+                unique_id: None,
+                fund_class_name: Some("main".to_string()),
+                nav_date: "2023-11-02".to_string(),
+                net_asset: None,
+                last_val: Some(dec!(11.9540)),
+                sell_price: Some(dec!(11.9540)),
+                buy_price: Some(dec!(11.9540)),
+                last_upd_date: None,
+            },
+            crate::sec::models::DailyNavInfo {
+                proj_id: proj_id.to_string(),
+                unique_id: None,
+                fund_class_name: Some("main".to_string()),
+                nav_date: "2023-11-30".to_string(),
+                net_asset: None,
+                last_val: Some(dec!(12.0018)),
+                sell_price: Some(dec!(12.0018)),
+                buy_price: Some(dec!(12.0018)),
+                last_upd_date: None,
+            },
+        ];
+
+        Repository::upsert_nav_history(&pool, proj_id, &nav_items)
+            .await
+            .unwrap();
+
+        // 2. Test get_nav_dates_for_month with fund_abbr = "tsp4-explorer"
+        let month_dates = Repository::get_nav_dates_for_month(&pool, proj_id, "2023-11", Some("tsp4-explorer"))
+            .await
+            .unwrap();
+        assert_eq!(month_dates.len(), 2, "Must find both dates for 'main' class fallback when fund_abbr is passed");
+        assert_eq!(month_dates.get("2023-11-02").unwrap(), "11.9540");
+        assert_eq!(month_dates.get("2023-11-30").unwrap(), "12.0018");
+
+        // 3. Test get_nav_by_date on exact date
+        let nav_res = Repository::get_nav_by_date(&pool, proj_id, "2023-11-30", Some("tsp4-explorer"))
+            .await
+            .unwrap()
+            .expect("Must resolve NAV on 2023-11-30");
+        assert_eq!(nav_res.nav, dec!(12.0018));
+        assert!(nav_res.is_exact_date);
+
+        // 4. Test get_nav_by_date on weekend/holiday date (nearest past date)
+        let nav_past = Repository::get_nav_by_date(&pool, proj_id, "2023-11-05", Some("tsp4-explorer"))
+            .await
+            .unwrap()
+            .expect("Must resolve nearest past NAV on 2023-11-02");
+        assert_eq!(nav_past.nav, dec!(11.9540));
+        assert_eq!(nav_past.nav_date, "2023-11-02");
+        assert!(!nav_past.is_exact_date);
     }
 }
