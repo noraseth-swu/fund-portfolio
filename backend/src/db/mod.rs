@@ -399,6 +399,28 @@ async fn create_tables(pool: &DbPool) -> Result<(), Box<dyn std::error::Error + 
     .execute(pool)
     .await;
 
+    // Migration: แก้ไขการ map ชื่อย่อกองทุน TTB จาก ES-GF -> ES-GF-A และ TSF -> TSF-A
+    let _ = sqlx::query(
+        r#"
+        UPDATE transactions SET fund_abbr = 'ES-GF-A' WHERE proj_id = 'M0621_2553' AND (fund_abbr = 'ES-GF' OR fund_abbr IS NULL);
+        UPDATE transactions SET fund_abbr = 'TSF-A' WHERE proj_id = 'M0011_2547' AND (fund_abbr = 'TSF' OR fund_abbr IS NULL);
+        UPDATE pending_transactions SET fund_abbr = 'ES-GF-A' WHERE fund_abbr = 'ES-GF';
+        UPDATE pending_transactions SET fund_abbr = 'TSF-A' WHERE fund_abbr = 'TSF';
+        UPDATE fund_aliases SET canonical_abbr = 'ES-GF-A' WHERE proj_id = 'M0621_2553' AND (alias = 'ES-GF' OR canonical_abbr = 'ES-GF');
+        UPDATE fund_aliases SET canonical_abbr = 'TSF-A' WHERE proj_id = 'M0011_2547' AND (alias = 'TSF' OR canonical_abbr = 'TSF');
+        INSERT OR REPLACE INTO fund_aliases (alias, proj_id, canonical_abbr, display_name)
+        VALUES 
+            ('ES-GF', 'M0621_2553', 'ES-GF-A', 'ES-GF-A (ES-GF)'),
+            ('T-ES-GF', 'M0621_2553', 'ES-GF-A', 'ES-GF-A (T-ES-GF)'),
+            ('TSF', 'M0011_2547', 'TSF-A', 'TSF-A (TSF)'),
+            ('TSF-A', 'M0011_2547', 'TSF-A', 'TSF-A (TSF-A)'),
+            ('TISCOSTRAT', 'M0011_2547', 'TSF-A', 'TSF-A (TISCOSTRAT)'),
+            ('TISCOSTRAT-A', 'M0011_2547', 'TSF-A', 'TSF-A (TISCOSTRAT-A)');
+        "#
+    )
+    .execute(pool)
+    .await;
+
     Ok(())
 }
 

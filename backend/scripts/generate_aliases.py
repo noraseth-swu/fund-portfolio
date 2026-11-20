@@ -72,10 +72,13 @@ def generate_fund_aliases():
         "EASTSPRING-AAEF": "ES-ASIA-A",
         "ES-ASIA": "ES-ASIA-A",
         "ES-ASIAEQ": "ES-ASIA-A",
-        "EASTSPRING GIS GLOBAL BOND FUND (ACCUMULATION)": "ES-GF",
-        "EASTSPRING GIS GLOBAL BOND FUND": "ES-GF",
-        "EASTSPRING-GIS": "ES-GF",
-        "T-ES-GF": "ES-GF",
+        "EASTSPRING GIS GLOBAL BOND FUND (ACCUMULATION)": "ES-GF-A",
+        "EASTSPRING GIS GLOBAL BOND FUND": "ES-GF-A",
+        "EASTSPRING-GIS": "ES-GF-A",
+        "T-ES-GF": "ES-GF-A",
+        "TESGF": "ES-GF-A",
+        "ES-GF": "ES-GF-A",
+        "ES-GF-A": "ES-GF-A",
         "EASTSPRING GERMAN EQUITY FUND": "ES-GER",
         "EASTSPRING GERMANY EQUITY FUND": "ES-GER",
         "EASTSPRING-GERMAN": "ES-GER",
@@ -97,7 +100,14 @@ def generate_fund_aliases():
         "KTAM CAPITAL SECURITIES FUND": "KT-CSBOND-A",
 
         # TISCO
-        "TISCOSTRAT-A": "TSF",
+        "TISCOSTRAT-A": "TSF-A",
+        "TISCOSTR-A": "TSF-A",
+        "TISCOSTRAT": "TSF-A",
+        "TISCOSTR": "TSF-A",
+        "TISCO STRATEGIC FUND CLASS A": "TSF-A",
+        "TISCO STRATEGIC FUND": "TSF-A",
+        "TSF": "TSF-A",
+        "TSF-A": "TSF-A",
 
         # Kasikorn Wealth PLUS rebranding aliases
         "WP-LIGHT": "K-WPLIGHT",
@@ -118,12 +128,6 @@ def generate_fund_aliases():
         "WP-SPEED-RMF": "K-WPSPEEDRMF",
         "WPLIGHTRMF": "K-WPLIGHTRMF",
         "WP-LIGHT-RMF": "K-WPLIGHTRMF",
-        "TISCOSTR-A": "TSF",
-        "TISCOSTRAT": "TSF",
-        "TISCOSTR": "TSF",
-        "TISCO STRATEGIC FUND CLASS A": "TSF",
-        "TISCO STRATEGIC FUND": "TSF",
-        "TSF-A": "TSF",
 
         # ONE AM
         "ONE EUROPEAN EQUITY FUND": "ONE-EUROEQ",
