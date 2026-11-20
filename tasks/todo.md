@@ -473,4 +473,15 @@
   - Complete guide for Dockge stack creation, `.env` template, and Cloudflare Zero Trust Dashboard Public Hostname mapping + Access OTP/SSO policy.
   - Live deployment verified at `https://fund-portfolio.unique-gistics.co.th` over HTTPS.
 
+---
+
+## Backlog & Future Enhancements (ยังไม่ต้องทำ)
+- [ ] **Settings Modal & Toast i18n Localization (TH / EN):**
+  - รองรับการสลับภาษา (TH/EN) ใน `SettingsModal.tsx` ตามปุ่มสลับภาษาบน Navbar:
+    - การ์ด "การทยอยดึงประวัติราคา NAV ย้อนหลัง (SEC API)" / "Historical NAV Backfill (SEC API)"
+    - ข้อความสถานะ "ความคืบหน้า: {completed} จาก {total} กองทุน" / "Progress: {completed} of {total} funds"
+    - ปุ่มควบคุม "พักการดึง / พักชั่วคราว" ("Pause Backfill") และ "เริ่มทยอยดึงต่อ" ("Resume Backfill")
+    - การแจ้งเตือน Toast Notification: "พักการดึงประวัติราคา NAV ชั่วคราว" ("Historical NAV backfill paused") และ "เริ่มการดึงประวัติราคา NAV ต่อ" ("Historical NAV backfill resumed")
+    - ส่วนตั้งค่า AMC & Email Statement Password Configuration ให้ดึงข้อความจาก `frontend/src/lib/i18n.tsx` ผ่าน `useI18n()`
+
 

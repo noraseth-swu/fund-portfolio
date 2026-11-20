@@ -183,3 +183,11 @@ flowchart TD
    - สร้าง Component แสดงกราฟในหน้า Dashboard
 2. **สร้าง Milestone 3.2 (Asset Allocation Donut Chart):**
    - เพิ่ม Component สรุปสัดส่วนสินทรัพย์ กองทุนรวม / หุ้นสหรัฐฯ / PVD บนหน้า Dashboard
+
+---
+
+## 5. Backlog & Deferred Items (บันทึกไว้ ยังไม่ต้องทำ)
+
+1. **Settings Modal & Toast i18n Internationalization (TH / EN):**
+   - หน้าต่างตั้งค่า (`SettingsModal.tsx`) และ Toast Notifications (เช่น "พักการดึงประวัติราคา NAV ชั่วคราว", "เริ่มทยอยดึงต่อ", การ์ดสถานะการดึงราคา NAV ย้อนหลัง และการตั้งค่า AMC/Email) ปัจจุบันยังเป็นภาษาไทยแบบ Hardcoded
+   - เชื่อมโยงเข้ากับระบบ `useI18n()` ใน `frontend/src/lib/i18n.tsx` เพื่อให้รองรับการสลับภาษา TH/EN แบบไดนามิกตามปุ่มสลับภาษาบน Navbar เมื่อถึงเวลาทำ Polish รอบใหญ่
