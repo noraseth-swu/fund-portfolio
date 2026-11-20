@@ -13,6 +13,22 @@ interface Props {
 
 type CalendarView = 'days' | 'months' | 'years';
 
+// Buddhist Era (BE) to Common Era (CE) normalization
+const normalizeYear = (year: number) => (year > 2400 ? year - 543 : year);
+
+// Local date parsing without UTC midnight shift
+const parseLocalDate = (dStr?: string) => {
+  if (dStr && /^\d{4}-\d{2}-\d{2}$/.test(dStr)) {
+    const parts = dStr.split('-').map(Number);
+    const y = normalizeYear(parts[0]);
+    const m = Math.max(0, Math.min(11, parts[1] - 1));
+    const d = parts[2];
+    return { year: y, month: m, day: d };
+  }
+  const now = new Date();
+  return { year: now.getFullYear(), month: now.getMonth(), day: now.getDate() };
+};
+
 export const NavDatePicker: React.FC<Props> = ({
   value,
   projId,
@@ -25,11 +41,11 @@ export const NavDatePicker: React.FC<Props> = ({
   const [calendarView, setCalendarView] = useState<CalendarView>('days');
   const containerRef = useRef<HTMLDivElement>(null);
 
-  // Parse initial view year and month
-  const initialDate = value && /^\d{4}-\d{2}-\d{2}$/.test(value) ? new Date(value) : new Date();
-  const [viewYear, setViewYear] = useState(() => initialDate.getFullYear());
-  const [viewMonth, setViewMonth] = useState(() => initialDate.getMonth()); // 0-11
-  const [decadeStart, setDecadeStart] = useState(() => Math.floor(initialDate.getFullYear() / 10) * 10);
+  // Parse initial view year and month locally (no UTC conversion)
+  const initial = parseLocalDate(value);
+  const [viewYear, setViewYear] = useState(() => initial.year);
+  const [viewMonth, setViewMonth] = useState(() => initial.month); // 0-11
+  const [decadeStart, setDecadeStart] = useState(() => Math.floor(initial.year / 10) * 10);
 
   // NAV dates map: { "2026-11-02": "9.8676" }
   const [navMap, setNavMap] = useState<Record<string, string>>({});
@@ -52,18 +68,16 @@ export const NavDatePicker: React.FC<Props> = ({
   // Sync view when value changes and popover is closed
   useEffect(() => {
     if (!isOpen && value && /^\d{4}-\d{2}-\d{2}$/.test(value)) {
-      const d = new Date(value);
-      if (!isNaN(d.getTime())) {
-        setViewYear(d.getFullYear());
-        setViewMonth(d.getMonth());
-        setDecadeStart(Math.floor(d.getFullYear() / 10) * 10);
-      }
+      const parsed = parseLocalDate(value);
+      setViewYear(parsed.year);
+      setViewMonth(parsed.month);
+      setDecadeStart(Math.floor(parsed.year / 10) * 10);
     }
   }, [value, isOpen]);
 
   // Sync decadeStart when viewYear changes
   useEffect(() => {
-    setDecadeStart(Math.floor(viewYear / 10) * 10);
+    setDecadeStart(Math.floor(normalizeYear(viewYear) / 10) * 10);
   }, [viewYear]);
 
   // Fetch NAV dates for current viewed month if projId or fundAbbr exists
@@ -74,7 +88,8 @@ export const NavDatePicker: React.FC<Props> = ({
       return;
     }
 
-    const monthStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}`;
+    const normYear = normalizeYear(viewYear);
+    const monthStr = `${normYear}-${String(viewMonth + 1).padStart(2, '0')}`;
     let isCancelled = false;
 
     setLoadingNav(true);
@@ -105,7 +120,7 @@ export const NavDatePicker: React.FC<Props> = ({
     e.stopPropagation();
     if (viewMonth === 0) {
       setViewMonth(11);
-      setViewYear(viewYear - 1);
+      setViewYear(normalizeYear(viewYear) - 1);
     } else {
       setViewMonth(viewMonth - 1);
     }
@@ -115,7 +130,7 @@ export const NavDatePicker: React.FC<Props> = ({
     e.stopPropagation();
     if (viewMonth === 11) {
       setViewMonth(0);
-      setViewYear(viewYear + 1);
+      setViewYear(normalizeYear(viewYear) + 1);
     } else {
       setViewMonth(viewMonth + 1);
     }
@@ -123,19 +138,23 @@ export const NavDatePicker: React.FC<Props> = ({
 
   const setToday = (e: React.MouseEvent) => {
     e.stopPropagation();
-    const today = new Date();
-    const dStr = today.toISOString().split('T')[0];
+    const now = new Date();
+    const y = now.getFullYear();
+    const m = String(now.getMonth() + 1).padStart(2, '0');
+    const d = String(now.getDate()).padStart(2, '0');
+    const dStr = `${y}-${m}-${d}`;
     const nav = navMap[dStr];
-    setViewYear(today.getFullYear());
-    setViewMonth(today.getMonth());
+    setViewYear(y);
+    setViewMonth(now.getMonth());
     setCalendarView('days');
     onChange(dStr, nav);
     setIsOpen(false);
   };
 
+  const normYear = normalizeYear(viewYear);
   // Calendar calculations
-  const daysInMonth = new Date(viewYear, viewMonth + 1, 0).getDate();
-  const firstDayIndex = new Date(viewYear, viewMonth, 1).getDay(); // 0 is Sunday
+  const daysInMonth = new Date(normYear, viewMonth + 1, 0).getDate();
+  const firstDayIndex = new Date(normYear, viewMonth, 1).getDay(); // 0 is Sunday
 
   // Month names
   const monthNamesTh = [
@@ -157,12 +176,13 @@ export const NavDatePicker: React.FC<Props> = ({
 
   const currentMonthName = locale === 'th' ? monthNamesTh[viewMonth] : monthNamesEn[viewMonth];
   const shortMonthNames = locale === 'th' ? shortMonthNamesTh : shortMonthNamesEn;
-  const displayYear = locale === 'th' ? viewYear + 543 : viewYear;
+  const displayYear = locale === 'th' ? normYear + 543 : normYear;
 
   // Decade years (12 items)
-  const decadeYears = Array.from({ length: 12 }, (_, i) => decadeStart + i);
-  const decadeStartDisplay = locale === 'th' ? decadeStart + 543 : decadeStart;
-  const decadeEndDisplay = locale === 'th' ? decadeStart + 11 + 543 : decadeStart + 11;
+  const normDecadeStart = normalizeYear(decadeStart);
+  const decadeYears = Array.from({ length: 12 }, (_, i) => normDecadeStart + i);
+  const decadeStartDisplay = locale === 'th' ? normDecadeStart + 543 : normDecadeStart;
+  const decadeEndDisplay = locale === 'th' ? normDecadeStart + 11 + 543 : normDecadeStart + 11;
 
   const weekdayNames = locale === 'th'
     ? ['อา', 'จ', 'อ', 'พ', 'พฤ', 'ศ', 'ส']
@@ -294,7 +314,7 @@ export const NavDatePicker: React.FC<Props> = ({
           {calendarView === 'years' && (
             <div className="grid grid-cols-3 gap-2 py-2">
               {decadeYears.map((y) => {
-                const isSelected = viewYear === y;
+                const isSelected = normYear === y;
                 const yearLabel = locale === 'th' ? y + 543 : y;
                 return (
                   <button
@@ -358,7 +378,7 @@ export const NavDatePicker: React.FC<Props> = ({
                 {/* Day Cells */}
                 {Array.from({ length: daysInMonth }).map((_, i) => {
                   const day = i + 1;
-                  const dateStr = `${viewYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
+                  const dateStr = `${normYear}-${String(viewMonth + 1).padStart(2, '0')}-${String(day).padStart(2, '0')}`;
                   const isSelected = value === dateStr;
                   const nav = navMap[dateStr];
                   const dayOfWeek = (firstDayIndex + i) % 7;

@@ -2,13 +2,19 @@
 use super::models::{AmcInfo, DailyNavInfo, FundProfile, SecPagedResponse};
 use reqwest::header::{HeaderMap, HeaderValue};
 use serde::de::DeserializeOwned;
+use std::sync::{Arc, LazyLock};
 use std::time::{Duration, Instant};
+use tokio::sync::Mutex;
 use tokio::time::sleep;
 
+static GLOBAL_SEC_THROTTLE: LazyLock<Arc<Mutex<Option<Instant>>>> =
+    LazyLock::new(|| Arc::new(Mutex::new(None)));
+
+#[derive(Clone)]
 pub struct SecClient {
     client: reqwest::Client,
     base_url: String,
-    last_request_time: Option<Instant>,
+    last_request_time: Arc<Mutex<Option<Instant>>>,
     min_interval: Duration,
 }
 
@@ -36,7 +42,7 @@ impl SecClient {
         Self {
             client,
             base_url: "https://api.sec.or.th".to_string(),
-            last_request_time: None,
+            last_request_time: Arc::clone(&GLOBAL_SEC_THROTTLE),
             // SEC Rule: Delay between requests must be >= 16 ms
             min_interval: Duration::from_millis(16),
         }
@@ -44,13 +50,14 @@ impl SecClient {
 
     /// หน่วงเวลาเพื่อไม่ให้เกิน Rate Limit และรักษาช่วงเวลา >= 16ms ตามกฎ ก.ล.ต.
     async fn throttle(&mut self) {
-        if let Some(last) = self.last_request_time {
+        let mut lock = self.last_request_time.lock().await;
+        if let Some(last) = *lock {
             let elapsed = last.elapsed();
             if elapsed < self.min_interval {
                 sleep(self.min_interval - elapsed).await;
             }
         }
-        self.last_request_time = Some(Instant::now());
+        *lock = Some(Instant::now());
     }
 
     /// เรียก GET request พร้อมระบบ Retry on 429
@@ -146,7 +153,7 @@ impl SecClient {
         Ok(data)
     }
 
-    /// ดึงข้อมูลแบบ Pagination (Cursor-based) วนลูปอ่านทุกหน้าจนกว่า next_cursor จะหมด
+    /// ดึงข้อมูลแบบ Pagination (Cursor-based) วนลูปอ่านทุกหน้าจนกว่า next_cursor จะหมด (พร้อม Loop Guards)
     pub async fn get_paged_all<T: DeserializeOwned>(
         &mut self,
         endpoint: &str,
@@ -156,8 +163,10 @@ impl SecClient {
         let mut all_items = Vec::new();
         let mut cursor: Option<String> = None;
         let page_size_str = page_size.min(100).to_string(); // SEC: สูงสุดไม่เกิน 100
+        let mut page_count = 0;
 
         loop {
+            page_count += 1;
             let mut query_params: Vec<(&str, &str)> = vec![("page_size", &page_size_str)];
             query_params.extend_from_slice(extra_query);
 
@@ -168,14 +177,17 @@ impl SecClient {
             }
 
             let paged: SecPagedResponse<T> = self.get_paged_single(endpoint, &query_params).await?;
+            if paged.items.is_empty() || page_count > 500 {
+                break;
+            }
             all_items.extend(paged.items);
 
-            // ตรวจสอบ next_cursor
+            // ตรวจสอบ next_cursor ป้องกัน cursor ซ้ำเดิมหรือค่าว่าง
             match paged.next_cursor {
-                Some(ref next) if !next.trim().is_empty() => {
-                    cursor = Some(next.clone());
+                Some(ref next) if !next.trim().is_empty() && cursor.as_deref() != Some(next.trim()) => {
+                    cursor = Some(next.trim().to_string());
                 }
-                _ => break, // หมดทุกหน้าแล้ว สิ้นสุดการวนลูป
+                _ => break, // หมดทุกหน้าแล้ว หรือ cursor ซ้ำเดิม สิ้นสุดการวนลูป
             }
         }
 

@@ -71,9 +71,58 @@ pub async fn get_portfolio(
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
 
-    let nav_map = Repository::get_latest_nav_map(&state.pool, &auth.user_id)
+    let mut nav_map = Repository::get_latest_nav_map(&state.pool, &auth.user_id)
         .await
         .map_err(|e| (StatusCode::INTERNAL_SERVER_ERROR, e.to_string()))?;
+
+    // โหลดราคาหุ้นและอัตราแลกเปลี่ยนล่าสุดจาก stock_prices ก่อน เพื่อให้ CalculationEngine มีราคาตลาด THB ที่ถูกต้อง
+    let mut price_map: HashMap<String, (Decimal, String, String)> = HashMap::new();
+    if let Ok(stock_prices_rows) = sqlx::query("SELECT ticker, price, currency, quote_date FROM stock_prices")
+        .fetch_all(&state.pool)
+        .await
+    {
+        for row in stock_prices_rows {
+            let t: String = row.get("ticker");
+            let p_str: String = row.get("price");
+            let c: String = row.get("currency");
+            let qd: String = row.get("quote_date");
+            if let Ok(p) = Decimal::from_str(&p_str) {
+                price_map.insert(t, (p, c, qd));
+            }
+        }
+    }
+
+    // หากยังไม่เคยมีราคาหุ้นในตาราง stock_prices ให้ trigger sync ทันที
+    if price_map.is_empty() {
+        let _ = SyncService::sync_stock_prices(&state.pool).await;
+        if let Ok(fresh_rows) = sqlx::query("SELECT ticker, price, currency, quote_date FROM stock_prices")
+            .fetch_all(&state.pool)
+            .await
+        {
+            for row in fresh_rows {
+                let t: String = row.get("ticker");
+                let p_str: String = row.get("price");
+                let c: String = row.get("currency");
+                let qd: String = row.get("quote_date");
+                if let Ok(p) = Decimal::from_str(&p_str) {
+                    price_map.insert(t, (p, c, qd));
+                }
+            }
+        }
+    }
+
+    let usd_thb_rate = price_map
+        .get("USDTHB")
+        .or_else(|| price_map.get("THB=X"))
+        .map(|(p, _, _)| *p)
+        .unwrap_or_else(|| Decimal::from_str("34.00").unwrap());
+
+    // นำราคาหุ้นต่างประเทศที่แปลงเป็น THB แล้วใส่ลงใน nav_map เพื่อให้ CalculationEngine คำนวณมูลค่าหุ้นได้แม่นยำ
+    for (ticker, (price_usd, _, qd)) in &price_map {
+        let price_thb = *price_usd * usd_thb_rate;
+        nav_map.insert(ticker.clone(), (ticker.clone(), None, price_thb, Some(qd.clone())));
+        nav_map.insert(format!("{}:{}", ticker, ticker), (ticker.clone(), None, price_thb, Some(qd.clone())));
+    }
 
     // กรองเฉพาะรายการกองทุนรวมเพื่อส่งให้ CalculationEngine (คัดแยกหุ้น tx_stk_ ออก เพื่อป้องกันการคำนวณซ้ำซ้อน)
     let fund_txs: Vec<Transaction> = txs
@@ -133,48 +182,6 @@ pub async fn get_portfolio(
             });
         }
     }
-
-    // โหลดราคาหุ้นและอัตราแลกเปลี่ยนล่าสุดจาก stock_prices
-    let mut price_map: HashMap<String, (Decimal, String, String)> = HashMap::new();
-    if let Ok(stock_prices_rows) = sqlx::query("SELECT ticker, price, currency, quote_date FROM stock_prices")
-        .fetch_all(&state.pool)
-        .await
-    {
-        for row in stock_prices_rows {
-            let t: String = row.get("ticker");
-            let p_str: String = row.get("price");
-            let c: String = row.get("currency");
-            let qd: String = row.get("quote_date");
-            if let Ok(p) = Decimal::from_str(&p_str) {
-                price_map.insert(t, (p, c, qd));
-            }
-        }
-    }
-
-    // หากยังไม่เคยมีราคาหุ้นในตาราง stock_prices ให้ trigger sync ทันที
-    if price_map.is_empty() {
-        let _ = SyncService::sync_stock_prices(&state.pool).await;
-        if let Ok(fresh_rows) = sqlx::query("SELECT ticker, price, currency, quote_date FROM stock_prices")
-            .fetch_all(&state.pool)
-            .await
-        {
-            for row in fresh_rows {
-                let t: String = row.get("ticker");
-                let p_str: String = row.get("price");
-                let c: String = row.get("currency");
-                let qd: String = row.get("quote_date");
-                if let Ok(p) = Decimal::from_str(&p_str) {
-                    price_map.insert(t, (p, c, qd));
-                }
-            }
-        }
-    }
-
-    let usd_thb_rate = price_map
-        .get("USDTHB")
-        .or_else(|| price_map.get("THB=X"))
-        .map(|(p, _, _)| *p)
-        .unwrap_or_else(|| Decimal::from_str("34.00").unwrap());
 
     // รวมข้อมูลหุ้นต่างประเทศ (US Stocks from stock_transactions)
     if let Ok(stock_rows) = sqlx::query(

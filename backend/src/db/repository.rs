@@ -151,8 +151,19 @@ impl Repository {
             .await?;
         }
 
-        // อัปเดตราคาล่าสุดลงในตาราง funds เพียงครั้งเดียวด้วยรายการที่มีราคาล่าสุด
-        if let Some(last_item) = nav_items.iter().rev().find(|it| it.last_val.is_some())
+        // อัปเดตราคาล่าสุดลงในตาราง funds เพียงครั้งเดียวด้วยรายการที่มีราคาล่าสุด (เลือก base/main class เป็นลำดับแรก)
+        let chosen_item = nav_items
+            .iter()
+            .rev()
+            .find(|it| {
+                it.last_val.is_some()
+                    && (it.fund_class_name.is_none()
+                        || it.fund_class_name.as_deref() == Some("main")
+                        || it.fund_class_name.as_deref() == Some(""))
+            })
+            .or_else(|| nav_items.iter().rev().find(|it| it.last_val.is_some()));
+
+        if let Some(last_item) = chosen_item
             && let Some(val) = last_item.last_val
         {
             sqlx::query(
@@ -260,7 +271,12 @@ impl Repository {
                         LIMIT 1
                     )
                 ) AS last_nav_date
-            FROM (SELECT proj_id, MAX(fund_abbr) AS fund_abbr FROM transactions WHERE user_id = ?1 GROUP BY proj_id) t
+            FROM (
+                SELECT proj_id, COALESCE(fund_abbr, proj_id) AS fund_abbr 
+                FROM transactions 
+                WHERE user_id = ?1 
+                GROUP BY proj_id, COALESCE(fund_abbr, proj_id)
+            ) t
             "#,
         )
         .bind(user_id)

@@ -31,6 +31,38 @@ impl CalculationEngine {
             })
         });
 
+        fn is_stock_asset(proj_id: &str, fund_abbr: &str, platform: &str) -> bool {
+            let p_upper = proj_id.to_uppercase();
+            let f_upper = fund_abbr.to_uppercase();
+            let plat_upper = platform.to_uppercase();
+
+            let common_fund_prefixes = [
+                "SCB", "K-", "KT-", "T-", "B-", "ONE-", "ASP-", "LH-", "DAOL-", "UOB-", "PRINCIPAL", "ES-", "KF-",
+            ];
+            let starts_with_fund_prefix = common_fund_prefixes
+                .iter()
+                .any(|prefix| f_upper.starts_with(prefix) || p_upper.starts_with(prefix));
+
+            if starts_with_fund_prefix {
+                return false;
+            }
+
+            if f_upper == "NVDA" || p_upper == "NVDA"
+                || f_upper == "AAPL" || p_upper == "AAPL"
+                || f_upper == "TSLA" || p_upper == "TSLA"
+                || f_upper == "MSFT" || p_upper == "MSFT"
+            {
+                return true;
+            }
+
+            let is_dime = plat_upper == "DIME" || plat_upper == "DIME!";
+            let is_ticker_shape = (!p_upper.starts_with('M') || p_upper == "MSFT")
+                && f_upper.len() <= 5
+                && f_upper.chars().all(|c| c.is_ascii_alphabetic());
+
+            is_dime && is_ticker_shape
+        }
+
         // Key: (proj_id, platform_str)
         struct PositionTracker {
             proj_id: String,
@@ -42,6 +74,7 @@ impl CalculationEngine {
             realized_pl: Decimal,
             dividend: Decimal,
             last_unit_price: Decimal,
+            implied_fx: Option<Decimal>,
         }
 
         let mut trackers: HashMap<(String, String, String), PositionTracker> = HashMap::new();
@@ -67,14 +100,15 @@ impl CalculationEngine {
 
             let tracker = trackers.entry(key).or_insert_with(|| PositionTracker {
                 proj_id: tx.proj_id.clone(),
-                fund_abbr: effective_abbr,
+                fund_abbr: effective_abbr.clone(),
                 fund_name_th: name_th,
-                platform: platform_str,
+                platform: platform_str.clone(),
                 units: Decimal::ZERO,
                 total_cost: Decimal::ZERO,
                 realized_pl: Decimal::ZERO,
                 dividend: Decimal::ZERO,
                 last_unit_price: Decimal::ZERO,
+                implied_fx: None,
             });
 
             if tx.unit_price > Decimal::ZERO {
@@ -89,13 +123,26 @@ impl CalculationEngine {
                     let buy_cost = tx.total_amount.abs();
                     tracker.units += buy_units;
                     tracker.total_cost += buy_cost;
+
+                    if is_stock_asset(&tx.proj_id, &effective_abbr, &platform_str)
+                        && buy_units > Decimal::ZERO
+                        && tx.unit_price > Decimal::ZERO
+                    {
+                        let fx = buy_cost / (buy_units * tx.unit_price);
+                        if fx >= Decimal::from(10) {
+                            tracker.implied_fx = Some(fx);
+                        }
+                    }
                 }
                 TransactionType::Sell => {
                     let units_to_sell = tx.units.abs();
+                    let net_proceeds = tx.total_amount.abs() - tx.fee.abs();
+
                     if tracker.units > Decimal::ZERO {
                         let avg_cost = tracker.total_cost / tracker.units;
-                        let cost_of_units_sold = units_to_sell * avg_cost;
-                        let net_proceeds = tx.total_amount.abs() - tx.fee.abs();
+                        let raw_cost_of_units_sold = units_to_sell * avg_cost;
+                        // Clamp cost_of_units_sold to tracker.total_cost so cost never exceeds existing total cost basis
+                        let cost_of_units_sold = raw_cost_of_units_sold.min(tracker.total_cost);
 
                         // Realized P/L = เงินที่ได้จากการขายสุทธิ - ต้นทุนของหน่วยที่ขาย
                         let gain_loss = net_proceeds - cost_of_units_sold;
@@ -105,9 +152,14 @@ impl CalculationEngine {
                             tracker.units = Decimal::ZERO;
                             tracker.total_cost = Decimal::ZERO;
                         } else {
-                            tracker.units -= units_to_sell;
-                            tracker.total_cost -= cost_of_units_sold;
+                            tracker.units = (tracker.units - units_to_sell).max(Decimal::ZERO);
+                            tracker.total_cost = (tracker.total_cost - cost_of_units_sold).max(Decimal::ZERO);
                         }
+                    } else {
+                        // Sell before buy: record net proceeds directly as realized P/L, maintaining 0 cost basis
+                        tracker.realized_pl += net_proceeds;
+                        tracker.units = Decimal::ZERO;
+                        tracker.total_cost = Decimal::ZERO;
                     }
                 }
                 TransactionType::Dividend => {
@@ -133,12 +185,38 @@ impl CalculationEngine {
                 .map(|(_, _, nav, date)| (*nav, date.clone()))
                 .unwrap_or((Decimal::ZERO, None));
 
+            let is_stock = is_stock_asset(&tracker.proj_id, &tracker.fund_abbr, &tracker.platform);
+
             // Fallback: หากยังไม่มีข้อมูล NAV ล่าสุดจาก SEC ให้ใช้ราคาต่อหน่วยล่าสุดจากธุรกรรม หรือต้นทุนเฉลี่ย
+            // สำหรับ US Stocks: ปรับราคาต่อหน่วย (USD) ด้วย implied FX เป็น THB เพื่อไม่ให้มูลค่าตลาดหดหาย -97%
             if current_nav <= Decimal::ZERO {
-                if tracker.last_unit_price > Decimal::ZERO {
+                if is_stock {
+                    if let Some(fx) = tracker.implied_fx {
+                        if tracker.last_unit_price > Decimal::ZERO {
+                            current_nav = (tracker.last_unit_price * fx).round_dp(4);
+                        } else if tracker.units > Decimal::ZERO && tracker.total_cost > Decimal::ZERO {
+                            current_nav = (tracker.total_cost / tracker.units).round_dp(4);
+                        }
+                    } else if tracker.units > Decimal::ZERO && tracker.total_cost > Decimal::ZERO {
+                        current_nav = (tracker.total_cost / tracker.units).round_dp(4);
+                    } else if tracker.last_unit_price > Decimal::ZERO {
+                        current_nav = tracker.last_unit_price;
+                    }
+                } else if tracker.last_unit_price > Decimal::ZERO {
                     current_nav = tracker.last_unit_price;
                 } else if tracker.units > Decimal::ZERO && tracker.total_cost > Decimal::ZERO {
                     current_nav = (tracker.total_cost / tracker.units).round_dp(4);
+                }
+            } else if is_stock {
+                // If current_nav came from a USD price source (e.g. Yahoo Finance USD quote)
+                // and cost per unit in THB is substantially higher (> 10x), normalize by fx
+                if let Some(fx) = tracker.implied_fx {
+                    if tracker.units > Decimal::ZERO && tracker.total_cost > Decimal::ZERO {
+                        let avg_thb = tracker.total_cost / tracker.units;
+                        if current_nav * Decimal::from(10) < avg_thb {
+                            current_nav = (current_nav * fx).round_dp(4);
+                        }
+                    }
                 }
             }
 
@@ -192,12 +270,6 @@ impl CalculationEngine {
 
             // แสดงเฉพาะรายการที่ยังมีหน่วยลงทุน หรือมี Realized P/L
             if tracker.units > Decimal::ZERO || tracker.realized_pl != Decimal::ZERO {
-                let is_stock = tracker.proj_id == "NVDA"
-                    || tracker.fund_abbr.to_uppercase() == "NVDA"
-                    || (!tracker.proj_id.starts_with('M')
-                        && tracker.platform == "DIME"
-                        && tracker.fund_abbr.len() <= 5
-                        && tracker.fund_abbr.chars().all(|c| c.is_ascii_alphabetic()));
                 let asset_type = if is_stock {
                     "STOCK".to_string()
                 } else {
@@ -208,6 +280,33 @@ impl CalculationEngine {
                     Some(format!("หุ้นสหรัฐฯ ({})", tracker.fund_abbr))
                 } else {
                     tracker.fund_name_th
+                };
+
+                let (currency, price_foreign, avg_cost_foreign, exchange_rate) = if is_stock {
+                    let fx = tracker.implied_fx;
+                    let foreign_price = if tracker.last_unit_price > Decimal::ZERO {
+                        Some(tracker.last_unit_price)
+                    } else if let Some(rate) = fx {
+                        if rate > Decimal::ZERO {
+                            Some((current_nav / rate).round_dp(4))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    let foreign_avg_cost = if let Some(rate) = fx {
+                        if rate > Decimal::ZERO && avg_cost > Decimal::ZERO {
+                            Some((avg_cost / rate).round_dp(4))
+                        } else {
+                            None
+                        }
+                    } else {
+                        None
+                    };
+                    (Some("USD".to_string()), foreign_price, foreign_avg_cost, fx)
+                } else {
+                    (None, None, None, None)
                 };
 
                 holdings.push(HoldingPosition {
@@ -226,10 +325,10 @@ impl CalculationEngine {
                     unrealized_pl_pct,
                     realized_pl: tracker.realized_pl.round_dp(2),
                     total_dividend: tracker.dividend.round_dp(2),
-                    currency: None,
-                    price_foreign: None,
-                    avg_cost_foreign: None,
-                    exchange_rate: None,
+                    currency,
+                    price_foreign,
+                    avg_cost_foreign,
+                    exchange_rate,
                 });
             }
         }
@@ -567,5 +666,110 @@ mod tests {
         assert_eq!(holding.total_units, dec!(50.0));
         assert_eq!(holding.realized_pl, dec!(100.0)); // (12 - 10) * 50 = 100
         assert_eq!(holding.asset_type, "FUND", "K-USA(UH) must be classified as FUND, not STOCK");
+    }
+
+    #[test]
+    fn test_us_stock_fx_normalization_eliminates_loss() {
+        // Investor buys 10 shares of NVDA at $150 USD with 52,500 THB invested on Dime
+        let tx_stock = Transaction {
+            id: "tx-nvda-1".to_string(),
+            idempotency_key: None,
+            proj_id: "NVDA".to_string(),
+            fund_abbr: Some("NVDA".to_string()),
+            platform: super::super::models::Platform::Dime,
+            trans_type: TransactionType::Buy,
+            trans_date: "2026-03-01".to_string(),
+            units: dec!(10.0),
+            unit_price: dec!(150.0), // $150 USD
+            total_amount: dec!(52500.0), // 52,500 THB (implies 35.0 THB/USD)
+            fee: dec!(0),
+            note: None,
+        };
+
+        let empty_nav_map = HashMap::new();
+        let summary = CalculationEngine::calculate_portfolio(vec![tx_stock], &empty_nav_map);
+
+        assert_eq!(summary.holdings.len(), 1);
+        let holding = &summary.holdings[0];
+        assert_eq!(holding.asset_type, "STOCK");
+        assert_eq!(holding.currency, Some("USD".to_string()));
+        assert_eq!(holding.exchange_rate, Some(dec!(35.0)));
+        // Market value must be 52,500 THB, NOT 1,500 THB (-97% crash)
+        assert_eq!(holding.total_cost, dec!(52500.0));
+        assert_eq!(holding.market_value, dec!(52500.0));
+        assert_eq!(holding.unrealized_pl, dec!(0.0));
+        assert_eq!(summary.total_cost, dec!(52500.0));
+        assert_eq!(summary.market_value, dec!(52500.0));
+        assert_eq!(summary.total_unrealized_pl, dec!(0.0));
+    }
+
+    #[test]
+    fn test_sell_before_buy_and_oversell_clamping() {
+        // 1. Sell before buy: 50 units sold for 600 THB when holding 0 units
+        let tx_premature_sell = Transaction {
+            id: "tx-premature-sell".to_string(),
+            idempotency_key: None,
+            proj_id: "SCBGOLD".to_string(),
+            fund_abbr: Some("SCBGOLD".to_string()),
+            platform: super::super::models::Platform::Scb,
+            trans_type: TransactionType::Sell,
+            trans_date: "2026-01-01".to_string(),
+            units: dec!(50.0),
+            unit_price: dec!(12.0),
+            total_amount: dec!(600.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        // 2. Later Buy: 100 units bought for 1,000 THB (10 THB/unit)
+        let tx_later_buy = Transaction {
+            id: "tx-later-buy".to_string(),
+            idempotency_key: None,
+            proj_id: "SCBGOLD".to_string(),
+            fund_abbr: Some("SCBGOLD".to_string()),
+            platform: super::super::models::Platform::Scb,
+            trans_type: TransactionType::Buy,
+            trans_date: "2026-01-15".to_string(),
+            units: dec!(100.0),
+            unit_price: dec!(10.0),
+            total_amount: dec!(1000.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        // 3. Oversell: Sell 120 units for 1,440 THB when holding 100 units (cost basis 1,000 THB)
+        let tx_oversell = Transaction {
+            id: "tx-oversell".to_string(),
+            idempotency_key: None,
+            proj_id: "SCBGOLD".to_string(),
+            fund_abbr: Some("SCBGOLD".to_string()),
+            platform: super::super::models::Platform::Scb,
+            trans_type: TransactionType::Sell,
+            trans_date: "2026-02-01".to_string(),
+            units: dec!(120.0),
+            unit_price: dec!(12.0),
+            total_amount: dec!(1440.0),
+            fee: dec!(0),
+            note: None,
+        };
+
+        let mut nav_map = HashMap::new();
+        nav_map.insert("SCBGOLD".to_string(), ("SCBGOLD".to_string(), None, dec!(12.0), Some("2026-02-01".to_string())));
+
+        let summary = CalculationEngine::calculate_portfolio(
+            vec![tx_premature_sell, tx_later_buy, tx_oversell],
+            &nav_map,
+        );
+
+        // Clamping ensures units and cost never turn negative
+        assert!(summary.total_cost >= dec!(0.0));
+        assert!(summary.market_value >= dec!(0.0));
+        assert_eq!(summary.total_cost, dec!(0.0));
+        assert_eq!(summary.market_value, dec!(0.0));
+        // Realized PL:
+        // Premature sell: 600 net proceeds
+        // Oversell: 1,440 - clamped cost (1,000) = 440 gain
+        // Total realized PL = 600 + 440 = 1,040
+        assert_eq!(summary.total_realized_pl, dec!(1040.0));
     }
 }

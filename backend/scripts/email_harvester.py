@@ -1361,7 +1361,9 @@ def process_pdf_attachment_worker(task):
         }
 
 def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_year_ce, dob_year_be, national_id_last5, db_path, gemini_api_key=None, max_emails=0, concurrency=5):
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     c = conn.cursor()
 
     # 0. Load Master Broker Configs dynamically from SQLite or config JSON
@@ -1427,7 +1429,9 @@ def sync_gmail(user_id, gmail_account, app_password, dob_day, dob_month, dob_yea
                 progress_state["recent_logs"] = progress_state["recent_logs"][-25:]
         write_sync_progress(progress_state)
 
-    conn = sqlite3.connect(db_path)
+    conn = sqlite3.connect(db_path, timeout=30.0)
+    conn.execute("PRAGMA journal_mode=WAL;")
+    conn.execute("PRAGMA busy_timeout=30000;")
     c = conn.cursor()
 
     # 0. Ensure checkpoint cache tables exist
