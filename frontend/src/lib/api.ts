@@ -510,6 +510,7 @@ export interface PendingTransaction {
   note?: string;
   status: string;
   suggestions?: FundSuggestion[];
+  candidate_classes?: string[];
   created_at?: string;
 }
 

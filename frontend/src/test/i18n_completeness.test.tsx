@@ -183,4 +183,33 @@ describe('i18n completeness and consistency suite', () => {
 
     unmount();
   });
+
+  it('contains all required SettingsModal and NAV backfill keys in both th and en', () => {
+    const requiredKeys: (keyof typeof translations.th)[] = [
+      'navBackfillTitle',
+      'backfillRunning',
+      'backfillPausedStatus',
+      'pauseBackfill',
+      'resumeBackfill',
+      'backfillProgress',
+      'backfillResumed',
+      'backfillPaused',
+      'masterBrokerRulesTitle',
+      'resetToDefaults',
+      'senderEmailsLabel',
+      'passwordPatternsLabel',
+      'emailsScanned',
+      'attachmentsFound',
+      'importedSuccess',
+      'skippedDuplicates',
+      'shareClasses',
+      'switchClass',
+    ];
+
+    for (const k of requiredKeys) {
+      expect(translations.th[k], `Missing TH key: ${k}`).toBeDefined();
+      expect(translations.en[k], `Missing EN key: ${k}`).toBeDefined();
+      expect(translations.en[k].length).toBeGreaterThan(0);
+    }
+  });
 });

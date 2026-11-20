@@ -262,3 +262,156 @@ async fn test_price_assisted_share_class_resolution() {
         class_tsp
     );
 }
+
+#[tokio::test]
+async fn test_heuristic_tiering_fallback_when_price_unavailable_or_holiday() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+
+    let proj_id = "M0643_2555";
+    sqlx::query(
+        "INSERT INTO funds (proj_id, proj_abbr_name, proj_name_th, proj_name_en, last_nav, last_nav_date)
+         VALUES (?1, 'SCBS&P500', 'กองทุนเปิดไทยพาณิชย์หุ้นยูเอส ดัชนี', 'SCB S&P 500 Index Fund', '44.7211', '2026-11-10')"
+    )
+    .bind(proj_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // Seed multiple classes: SSF tax class, Dividend class (-D), and Accumulation/Class A (-A)
+    let nav_items = vec![
+        DailyNavInfo {
+            proj_id: proj_id.to_string(),
+            unique_id: None,
+            fund_class_name: Some("SCBS&P500(SSFA)".to_string()),
+            nav_date: "2026-11-10".to_string(),
+            net_asset: None,
+            last_val: Some(dec!(44.4444)),
+            sell_price: Some(dec!(44.4444)),
+            buy_price: Some(dec!(44.4444)),
+            last_upd_date: None,
+        },
+        DailyNavInfo {
+            proj_id: proj_id.to_string(),
+            unique_id: None,
+            fund_class_name: Some("SCBS&P500-D".to_string()),
+            nav_date: "2026-11-10".to_string(),
+            net_asset: None,
+            last_val: Some(dec!(35.1234)),
+            sell_price: Some(dec!(35.1234)),
+            buy_price: Some(dec!(35.1234)),
+            last_upd_date: None,
+        },
+        DailyNavInfo {
+            proj_id: proj_id.to_string(),
+            unique_id: None,
+            fund_class_name: Some("SCBS&P500-A".to_string()),
+            nav_date: "2026-11-10".to_string(),
+            net_asset: None,
+            last_val: Some(dec!(44.7211)),
+            sell_price: Some(dec!(44.7211)),
+            buy_price: Some(dec!(44.7211)),
+            last_upd_date: None,
+        },
+    ];
+    Repository::upsert_nav_history(&pool, proj_id, &nav_items).await.unwrap();
+
+    // Query on a weekend/holiday date where NAV is not published, or with price = 0
+    let resolved = Repository::resolve_share_class_by_price(
+        &pool,
+        proj_id,
+        "2026-11-15", // Sunday
+        dec!(0),
+    )
+    .await
+    .unwrap();
+
+    assert!(resolved.is_some(), "Should resolve a fallback class via heuristic tiering");
+    let class_name = resolved.unwrap();
+    // Invariant: Must resolve to Tier 1 Class A / retail accumulation
+    assert!(
+        class_name.ends_with("-A") || class_name.ends_with("(A)") || class_name.ends_with("AA") || class_name.ends_with("A"),
+        "Must default to Class A / retail accumulation, got: {}",
+        class_name
+    );
+    // Strict Guard: Must NEVER default to SSF, RMF, or ThaiESG
+    assert!(
+        !class_name.to_uppercase().contains("SSF"),
+        "Fallback must NEVER default to SSF without explicit tax keyword! Got: {}",
+        class_name
+    );
+    assert!(
+        !class_name.to_uppercase().contains("RMF"),
+        "Fallback must NEVER default to RMF! Got: {}",
+        class_name
+    );
+    assert!(
+        !class_name.to_uppercase().contains("THAIESG") && !class_name.to_uppercase().contains("TESG"),
+        "Fallback must NEVER default to ThaiESG! Got: {}",
+        class_name
+    );
+}
+
+#[tokio::test]
+async fn test_unseen_new_fund_dynamic_sec_master_resolution() {
+    let pool = init_db("sqlite::memory:").await.unwrap();
+
+    // An entirely unseen fund from SEC Open API with no static dict entry anywhere
+    let proj_id = "M9999_2569";
+    sqlx::query(
+        "INSERT INTO funds (proj_id, proj_abbr_name, proj_name_th, proj_name_en, last_nav, last_nav_date)
+         VALUES (?1, 'NEW-QUANT', 'กองทุนเปิดนิวเอจ ควอนตัม แมชชีนเลิร์นนิ่ง', 'New Age Quantum ML Fund', '10.5000', '2026-11-20')"
+    )
+    .bind(proj_id)
+    .execute(&pool)
+    .await
+    .unwrap();
+
+    // 1. Resolve project ID from raw broker string
+    let resolved_proj = Repository::resolve_project_id(&pool, "NEW AGE QUANTUM ML FUND")
+        .await
+        .unwrap();
+    assert_eq!(resolved_proj, Some(proj_id.to_string()), "Must resolve completely unseen fund by SEC master catalog");
+
+    // 2. Seed classes in NAV history
+    let nav_items = vec![
+        DailyNavInfo {
+            proj_id: proj_id.to_string(),
+            unique_id: None,
+            fund_class_name: Some("NEW-QUANT-A".to_string()),
+            nav_date: "2026-11-20".to_string(),
+            net_asset: None,
+            last_val: Some(dec!(10.5000)),
+            sell_price: Some(dec!(10.5000)),
+            buy_price: Some(dec!(10.5000)),
+            last_upd_date: None,
+        },
+        DailyNavInfo {
+            proj_id: proj_id.to_string(),
+            unique_id: None,
+            fund_class_name: Some("NEW-QUANT-SSF".to_string()),
+            nav_date: "2026-11-20".to_string(),
+            net_asset: None,
+            last_val: Some(dec!(10.4500)),
+            sell_price: Some(dec!(10.4500)),
+            buy_price: Some(dec!(10.4500)),
+            last_upd_date: None,
+        },
+    ];
+    Repository::upsert_nav_history(&pool, proj_id, &nav_items).await.unwrap();
+
+    // 3. Resolve share class by transaction price
+    let resolved_class = Repository::resolve_share_class_by_price(
+        &pool,
+        proj_id,
+        "2026-11-20",
+        dec!(10.5000),
+    )
+    .await
+    .unwrap();
+    assert_eq!(
+        resolved_class,
+        Some("NEW-QUANT-A".to_string()),
+        "Must dynamically resolve to NEW-QUANT-A based on price without static dict"
+    );
+}
+

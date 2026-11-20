@@ -9,6 +9,7 @@ import {
   Search,
   CheckSquare,
   Building2,
+  Layers,
 } from 'lucide-react';
 import {
   getPendingTransactions,
@@ -18,6 +19,7 @@ import {
   commitPendingTransactions,
   createPendingTransaction,
   getNavByDate,
+  searchFunds,
   type PendingTransaction,
 } from '../lib/api';
 import { FundSearchCombobox } from './FundSearchCombobox';
@@ -57,6 +59,172 @@ export const TransactionReviewModal: React.FC<Props> = ({
   const [activeTab, setActiveTab] = useState<'ALL' | 'EXACT' | 'FUZZY' | 'NONE'>('ALL');
   const [filterText, setFilterText] = useState('');
   const [message, setMessage] = useState<{ type: 'success' | 'error'; text: string } | null>(null);
+
+  // Discovered share classes for proj_id: Record<proj_id, class[]>
+  const [projClasses, setProjClasses] = useState<Record<string, string[]>>({});
+  // Share class NAV on transaction date: Record<`${itemId}_${class}`, navStr>
+  const [classNavs, setClassNavs] = useState<Record<string, string>>({});
+
+  const getCandidateClassesForItem = (it: PendingTransaction): string[] => {
+    const set = new Set<string>();
+
+    if (it.candidate_classes && Array.isArray(it.candidate_classes)) {
+      it.candidate_classes.forEach((c) => {
+        const name = typeof c === 'string' ? c : (c as any).fund_abbr;
+        if (name) set.add(name);
+      });
+    }
+
+    if (it.suggestions && it.suggestions.length > 1) {
+      it.suggestions.forEach((s) => {
+        if (s.fund_abbr) set.add(s.fund_abbr);
+      });
+    }
+
+    if (it.proj_id && projClasses[it.proj_id]) {
+      projClasses[it.proj_id].forEach((c) => set.add(c));
+    }
+
+    if (set.size > 0 && it.fund_abbr) {
+      set.add(it.fund_abbr);
+    }
+
+    return Array.from(set);
+  };
+
+  // Auto-discover candidate classes for items with proj_id
+  useEffect(() => {
+    if (!isOpen || items.length === 0) return;
+
+    items.forEach(async (it) => {
+      const explicitClasses = it.candidate_classes || [];
+      const suggestionClasses =
+        it.suggestions && it.suggestions.length > 1
+          ? it.suggestions.map((s) => s.fund_abbr).filter(Boolean)
+          : [];
+
+      if (
+        explicitClasses.length === 0 &&
+        suggestionClasses.length === 0 &&
+        it.proj_id &&
+        !projClasses[it.proj_id]
+      ) {
+        try {
+          const baseName = (it.fund_abbr || it.raw_fund_name || '')
+            .replace(
+              /[-_ ]?(A|D|E|SSF|SSFA|SSF-A|RMF|P|I|X|UH-E|UH-M|UH-SSF|RP|RI|S|\(A\)|\(D\)|\(E\)|\(SSF\)|\(SSFA\)|\(RMF\))$/i,
+              ''
+            )
+            .trim();
+
+          const results = await searchFunds(baseName || it.fund_abbr || it.proj_id);
+          const matching = results.filter(
+            (r) =>
+              r.proj_id === it.proj_id ||
+              (baseName &&
+                (r.proj_abbr_name || '').toUpperCase().includes(baseName.toUpperCase()))
+          );
+          const classes = Array.from(
+            new Set(matching.map((r) => r.proj_abbr_name || r.proj_id).filter(Boolean))
+          );
+          if (classes.length > 1) {
+            setProjClasses((prev) => ({ ...prev, [it.proj_id!]: classes }));
+          }
+        } catch {
+          // Ignore search error in test/offline environments
+        }
+      }
+    });
+  }, [isOpen, items, projClasses]);
+
+  // Fetch NAV on transaction date for candidate classes
+  useEffect(() => {
+    if (!isOpen || items.length === 0) return;
+
+    items.forEach((it) => {
+      const classes = getCandidateClassesForItem(it);
+      if (classes.length <= 1) return;
+
+      classes.forEach(async (cls) => {
+        const key = `${it.id}_${cls}`;
+        if (cls === it.fund_abbr && it.unit_price && parseFloat(it.unit_price) > 0) {
+          if (!classNavs[key]) {
+            setClassNavs((prev) => ({ ...prev, [key]: it.unit_price }));
+          }
+          return;
+        }
+
+        if (classNavs[key]) return;
+
+        if (it.proj_id) {
+          try {
+            const navRes = await getNavByDate(it.proj_id, it.trans_date, cls);
+            if (navRes && navRes.nav) {
+              setClassNavs((prev) => ({ ...prev, [key]: navRes.nav }));
+            }
+          } catch {
+            // Safe ignore
+          }
+        }
+      });
+    });
+  }, [isOpen, items, projClasses, classNavs]);
+
+  // Handle switching class with 1 click
+  const handleClassSwitch = async (id: string, newClass: string, nav?: string) => {
+    const target = items.find((i) => i.id === id);
+    if (!target) return;
+
+    let unitPrice = nav;
+    let navSource = target.nav_source || 'SEC_HISTORY';
+
+    if (!unitPrice && target.proj_id) {
+      try {
+        const navRes = await getNavByDate(target.proj_id, target.trans_date, newClass);
+        if (navRes && navRes.nav) {
+          unitPrice = navRes.nav;
+          navSource = navRes.nav_source || 'SEC_HISTORY';
+        }
+      } catch {
+        unitPrice = target.unit_price;
+      }
+    }
+
+    const p = parseFloat(unitPrice || target.unit_price) || 0;
+    const existingAmount = parseFloat(target.total_amount) || 0;
+    let u = parseFloat(target.units) || 0;
+    let totalAmount = target.total_amount;
+
+    if (existingAmount > 0 && p > 0) {
+      // Golden Rule: Preserve settled cash amount, adjust units
+      u = parseFloat((existingAmount / p).toFixed(4));
+      totalAmount = existingAmount.toFixed(2);
+    } else if (u > 0 && p > 0) {
+      totalAmount = (u * p).toFixed(2);
+    }
+
+    const patch: Partial<PendingTransaction> = {
+      fund_abbr: newClass,
+      unit_price: unitPrice || target.unit_price,
+      units: u > 0 ? u.toFixed(4) : target.units,
+      total_amount: totalAmount,
+      nav_source: navSource,
+    };
+
+    setItems((prev) =>
+      prev.map((item) => (item.id === id ? { ...item, ...patch } : item))
+    );
+
+    if (unitPrice) {
+      setClassNavs((prev) => ({ ...prev, [`${id}_${newClass}`]: unitPrice! }));
+    }
+
+    try {
+      await updatePendingTransaction(id, patch);
+    } catch (err) {
+      console.error('Failed to update share class:', err);
+    }
+  };
 
   // Sync initial platform when opened
   useEffect(() => {
@@ -926,6 +1094,83 @@ export const TransactionReviewModal: React.FC<Props> = ({
                               suggestions={it.suggestions}
                               onChange={(fund) => handleFundSelect(it.id, fund)}
                             />
+
+                            {/* Interactive Share Class Selector (Task 36.5) */}
+                            {(() => {
+                              const candidateClasses = getCandidateClassesForItem(it);
+                              if (candidateClasses.length <= 1) return null;
+
+                              return (
+                                <div
+                                  className="mt-2 pt-1.5 border-t border-slate-100 dark:border-slate-800"
+                                  data-testid={`share-class-selector-${it.id}`}
+                                >
+                                  <div className="flex items-center justify-between gap-1 mb-1">
+                                    <span className="text-[10px] font-semibold text-slate-500 dark:text-slate-400 flex items-center gap-1">
+                                      <Layers className="w-3 h-3 text-indigo-500" />
+                                      <span>{t('shareClasses')}:</span>
+                                    </span>
+                                    {candidateClasses.length > 3 && (
+                                      <select
+                                        value={it.fund_abbr || ''}
+                                        onChange={(e) => {
+                                          const chosen = e.target.value;
+                                          const nav = classNavs[`${it.id}_${chosen}`];
+                                          handleClassSwitch(it.id, chosen, nav);
+                                        }}
+                                        data-testid={`share-class-select-${it.id}`}
+                                        className="text-[10px] px-1.5 py-0.5 rounded border border-slate-200 dark:border-slate-700 bg-white dark:bg-slate-800 text-slate-800 dark:text-slate-200 font-mono cursor-pointer"
+                                      >
+                                        {candidateClasses.map((cls) => {
+                                          const nav = classNavs[`${it.id}_${cls}`];
+                                          return (
+                                            <option key={cls} value={cls}>
+                                              {cls} {nav ? `(NAV ฿${nav})` : ''}
+                                            </option>
+                                          );
+                                        })}
+                                      </select>
+                                    )}
+                                  </div>
+
+                                  <div className="flex flex-wrap gap-1" role="group" aria-label={t('shareClasses')}>
+                                    {candidateClasses.map((cls) => {
+                                      const isSelected = (it.fund_abbr || '').toUpperCase() === cls.toUpperCase();
+                                      const nav = classNavs[`${it.id}_${cls}`];
+
+                                      return (
+                                        <button
+                                          key={cls}
+                                          type="button"
+                                          onClick={() => handleClassSwitch(it.id, cls, nav)}
+                                          data-testid={`share-class-pill-${cls}`}
+                                          aria-pressed={isSelected}
+                                          className={`px-2 py-0.5 rounded-md text-[10px] font-medium transition-all flex items-center gap-1 cursor-pointer ${
+                                            isSelected
+                                              ? 'bg-indigo-600 text-white shadow-xs font-bold'
+                                              : 'bg-slate-100 hover:bg-slate-200 dark:bg-slate-800 dark:hover:bg-slate-700 text-slate-700 dark:text-slate-300 border border-slate-200 dark:border-slate-700'
+                                          }`}
+                                          title={t('switchToClass', { name: cls })}
+                                        >
+                                          <span>{cls}</span>
+                                          {nav && (
+                                            <span
+                                              className={`text-[9px] font-mono ${
+                                                isSelected
+                                                  ? 'text-indigo-100'
+                                                  : 'text-indigo-600 dark:text-indigo-400 font-semibold'
+                                              }`}
+                                            >
+                                              ฿{nav}
+                                            </span>
+                                          )}
+                                        </button>
+                                      );
+                                    })}
+                                  </div>
+                                </div>
+                              );
+                            })()}
                           </div>
                         </td>
 

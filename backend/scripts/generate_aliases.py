@@ -37,149 +37,56 @@ def generate_fund_aliases():
                     # Keep canonical abbr
                     aliases[abbr] = abbr
 
-    # Specific TMB / Eastspring aliases and unit class split
-    aliases['TMB50'] = 'ES-SET50-A'
-    aliases['TMB-50'] = 'ES-SET50-A'
-    aliases['ES-SET50'] = 'ES-SET50-A'
-    aliases['TMB50DV'] = 'ES-SET50DV'
-    aliases['TMB50RMF'] = 'ES-SET50RMF'
+    # 2. Dynamically derive aliases from official SEC database records (funds and fund_nav_history)
+    db_path = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), 'portfolio.db')
+    if os.path.exists(db_path):
+        import sqlite3
+        conn = sqlite3.connect(db_path)
+        c = conn.cursor()
+        
+        # Populate aliases from funds table (SEC master catalog)
+        try:
+            c.execute("SELECT proj_id, proj_abbr_name, proj_name_th, proj_name_en FROM funds")
+            for pid, abbr, name_th, name_en in c.fetchall():
+                if abbr:
+                    clean_abbr = abbr.strip().upper()
+                    aliases[clean_abbr] = clean_abbr
+                    norm = re.sub(r'[\s\-()&]+', '', clean_abbr)
+                    if norm and norm != clean_abbr:
+                        aliases[norm] = clean_abbr
+                if name_en:
+                    # Normalized English name alias without boilerplate
+                    cleaned_en = re.sub(r'\b(FUND|FUNDS|OPEN|ENDED|MUTUAL)\b', '', name_en.upper()).strip()
+                    cleaned_en = re.sub(r'\s+', ' ', cleaned_en)
+                    if cleaned_en and abbr:
+                        aliases[cleaned_en] = abbr.strip().upper()
+        except sqlite3.OperationalError:
+            pass
 
-    # Platform & Statement Confirmation Note Aliases
-    additional_aliases = {
-        # TTB Smart Port
-        "TTB-SMART-PORT-1": "tsp1-preserver",
-        "TTB SMART PORT 1": "tsp1-preserver",
-        "TTB SMART PORT 1 PRESERVER FUND": "tsp1-preserver",
-        "TTB-SMART-PORT-2": "tsp2-nurturer",
-        "TTB SMART PORT 2": "tsp2-nurturer",
-        "TTB SMART PORT 2 NURTURER FUND": "tsp2-nurturer",
-        "TTB-SMART-PORT-3": "tsp3-balancer",
-        "TTB SMART PORT 3": "tsp3-balancer",
-        "TTB SMART PORT 3 BALANCER FUND": "tsp3-balancer",
-        "TTB-SMART-PORT-4": "tsp4-explorer",
-        "TTB SMART PORT 4": "tsp4-explorer",
-        "TTB SMART PORT 4 EXPLORER FUND": "tsp4-explorer",
-        "TTB SMART PORT 4 EXPLORER": "tsp4-explorer",
-        "TTBSMARTPORT4": "tsp4-explorer",
-        "TTB-SMART-PORT-5": "tsp5-gogetter",
-        "TTB SMART PORT 5": "tsp5-gogetter",
-        "TTB SMART PORT 5 GOGETTER FUND": "tsp5-gogetter",
+        # Populate aliases from fund_nav_history (distinct SEC registered share classes)
+        try:
+            c.execute("""
+                SELECT DISTINCT nh.proj_id, nh.fund_class_name, f.proj_abbr_name 
+                FROM fund_nav_history nh
+                JOIN funds f ON nh.proj_id = f.proj_id
+                WHERE nh.fund_class_name IS NOT NULL AND nh.fund_class_name != '' AND nh.fund_class_name != 'main'
+            """)
+            for pid, class_name, proj_abbr in c.fetchall():
+                clean_class = class_name.strip().upper()
+                aliases[clean_class] = clean_class
+                norm = re.sub(r'[\s\-()&]+', '', clean_class)
+                if norm and norm != clean_class:
+                    aliases[norm] = clean_class
+        except sqlite3.OperationalError:
+            pass
 
-        # Eastspring confirmation note labels
-        "EASTSPRING ASIA ACTIVE EQUITY FUND (ACCUMULATION CLASS)": "ES-ASIA-A",
-        "EASTSPRING ASIA ACTIVE EQUITY FUND": "ES-ASIA-A",
-        "TMB EASTSPRING ASIA ACTIVE FUND": "ES-ASIA-A",
-        "EASTSPRING-AAEF": "ES-ASIA-A",
-        "ES-ASIA": "ES-ASIA-A",
-        "ES-ASIAEQ": "ES-ASIA-A",
-        "EASTSPRING GIS GLOBAL BOND FUND (ACCUMULATION)": "ES-GF-A",
-        "EASTSPRING GIS GLOBAL BOND FUND": "ES-GF-A",
-        "EASTSPRING-GIS": "ES-GF-A",
-        "T-ES-GF": "ES-GF-A",
-        "TESGF": "ES-GF-A",
-        "ES-GF": "ES-GF-A",
-        "ES-GF-A": "ES-GF-A",
-        "EASTSPRING GERMAN EQUITY FUND": "ES-GER",
-        "EASTSPRING GERMANY EQUITY FUND": "ES-GER",
-        "EASTSPRING-GERMAN": "ES-GER",
-        "TMB GERMAN EQUITY FUND": "ES-GER",
-        "ES-GER": "ES-GER",
-        "ES-GERMAN": "ES-GER",
-        "EASTSPRING US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
-        "EASTSPRING-USBLUE": "ES-USBLUECHIP",
-        "TMB US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
-        "EASTSPRING GLOBAL CORE EQUITY FUND": "ES-GCORE",
-        "EASTSPRING-GCEF": "ES-GCORE",
-        "TMB EASTSPRING GLOBAL CORE EQUITY FUND": "ES-GCORE",
-        "EASTSPRING GLOBAL DIVIDEND EQUITY FUND": "ES-GDIV",
-        "EASTSPRING-GDEF": "ES-GDIV",
-        "ES-GDIV-ACC": "ES-GDIV",
-        "EASTSPRING US INFORMATION TECHNOLOGY FUND": "ES-USTECH",
-        "EASTSPRING-USTECH": "ES-USTECH",
-        "KTAM CAPITAL SECURITIES FUND - CLASS A": "KT-CSBOND-A",
-        "KTAM CAPITAL SECURITIES FUND": "KT-CSBOND-A",
-
-        # TISCO
-        "TISCOSTRAT-A": "TSF-A",
-        "TISCOSTR-A": "TSF-A",
-        "TISCOSTRAT": "TSF-A",
-        "TISCOSTR": "TSF-A",
-        "TISCO STRATEGIC FUND CLASS A": "TSF-A",
-        "TISCO STRATEGIC FUND": "TSF-A",
-        "TSF": "TSF-A",
-        "TSF-A": "TSF-A",
-
-        # Kasikorn Wealth PLUS rebranding aliases
-        "WP-LIGHT": "K-WPLIGHT",
-        "WPLIGHT": "K-WPLIGHT",
-        "WP-BALANCED": "K-WPBALANCED",
-        "WPBALANCED": "K-WPBALANCED",
-        "WP-SPARK": "K-WPSPARK",
-        "WPSPARK": "K-WPSPARK",
-        "WP-SPEEDUP": "K-WPSPEEDUP",
-        "WPSPEEDUP": "K-WPSPEEDUP",
-        "WP-ULTIMATE": "K-WPULTIMATE",
-        "WPULTIMATE": "K-WPULTIMATE",
-        "WPBALANCEDRMF": "K-WPBALRMF",
-        "WP-BALANCED-RMF": "K-WPBALRMF",
-        "WPULTIMATERMF": "K-WPULTIRMF",
-        "WP-ULTIMATE-RMF": "K-WPULTIRMF",
-        "WPSPEEDRMF": "K-WPSPEEDRMF",
-        "WP-SPEED-RMF": "K-WPSPEEDRMF",
-        "WPLIGHTRMF": "K-WPLIGHTRMF",
-        "WP-LIGHT-RMF": "K-WPLIGHTRMF",
-
-        # ONE AM
-        "ONE EUROPEAN EQUITY FUND": "ONE-EUROEQ",
-        "ONE-EUROPEAN": "ONE-EUROEQ",
-        "ONE-EUROPE": "ONE-EUROPE",
-
-        # SCB
-        "SP500E": "SCBS&P500E",
-        "SCBSP500E": "SCBS&P500E",
-        "SCBS&P500E": "SCBS&P500E",
-        "SCBS&P500": "SCBS&P500",
-        "SCB S&P 500 INDEX FUND": "SCBS&P500",
-        "SCBCHAA": "SCBCHAA",
-        "SCBCHA(A)": "SCBCHAA",
-        "SCBCHA-A": "SCBCHAA",
-        "SCBCHINA(A)": "SCBCHAA",
-        "SCBCHINA-A": "SCBCHAA",
-        "SCBCHINAA": "SCBCHAA",
-        "SCB CHINA A-SHARES FUND (ACCUMULATION)": "SCBCHAA",
-        "SCB CHINA A-SHARES FUND": "SCBCHAFUND",
-        "SCBCHINA": "SCBCHAFUND",
-        "SCBCHA": "SCBCHAA",
-        "SCBNDQ(E)": "SCBNDQ(E)",
-        "SCB NDQ(E)": "SCBNDQ(E)",
-        "SCBNDQE": "SCBNDQ(E)",
-        "NDQ(E)": "SCBNDQ(E)",
-        "SCBNDQ(A)": "SCBNDQ(A)",
-        "SCBNDQA": "SCBNDQ(A)",
-
-        # Dime KKP
-        "KKP NDQ100-UH-E": "KKP NDQ100-UH FUND",
-        "KKP NDQ100-UH": "KKP NDQ100-UH FUND",
-        "KKP US500-UH-E": "KKP US500-UH FUND",
-        "KKP US500-UH": "KKP US500-UH FUND",
-
-        # Kasikorn
-        "WEALTH PLUS SPEED4B": "K-WPSPEEDUP",
-        "WEALTHPLUS SPEEDUP": "K-WPSPEEDUP",
-        "K-FIXEDPLUS-A": "K-FIXEDPLUS",
-    }
-
-    for k, v in additional_aliases.items():
-        aliases[k.upper()] = v
-        clean_k = re.sub(r'[\s\-]+', '', k.upper())
-        if clean_k and clean_k != k.upper():
-            aliases[clean_k] = v
+        conn.close()
 
     out_path = os.path.join(os.path.dirname(os.path.abspath(__file__)), 'fund_aliases.json')
     with open(out_path, 'w', encoding='utf-8') as f:
         json.dump(aliases, f, indent=2, ensure_ascii=False)
 
-    print(f'[✓] Generated fund_aliases.json with {len(aliases)} mapping entries at {out_path}')
+    print(f'[✓] Generated fund_aliases.json strictly from SEC DB & PDF records ({len(aliases)} entries) at {out_path}')
     sync_aliases_to_db(aliases)
     return aliases
 

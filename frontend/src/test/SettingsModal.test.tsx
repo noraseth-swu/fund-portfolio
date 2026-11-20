@@ -66,4 +66,18 @@ describe('SettingsModal', () => {
     expect(screen.getByText(/SCB EASY/i)).toBeInTheDocument();
     expect(screen.getByText(/KASSET PVD/i)).toBeInTheDocument();
   });
+
+  it('renders localized English text when locale is en', async () => {
+    localStorage.setItem('fund_portfolio_locale', 'en');
+    render(
+      <I18nProvider>
+        <SettingsModal isOpen={true} onClose={vi.fn()} />
+      </I18nProvider>
+    );
+
+    expect(screen.getByText(/System Settings/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Historical NAV Backfill/i)).toBeInTheDocument();
+    expect(await screen.findByText(/Master Broker Rules/i)).toBeInTheDocument();
+    localStorage.removeItem('fund_portfolio_locale');
+  });
 });

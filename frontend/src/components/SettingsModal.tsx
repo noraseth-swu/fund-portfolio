@@ -42,19 +42,26 @@ interface SettingsModalProps {
   onSyncComplete?: () => void;
 }
 
-const MONTHS_EN = [
-  { val: '01', abbr: 'Jan', name: 'January (มกราคม)' },
-  { val: '02', abbr: 'Feb', name: 'February (กุมภาพันธ์)' },
-  { val: '03', abbr: 'Mar', name: 'March (มีนาคม)' },
-  { val: '04', abbr: 'Apr', name: 'April (เมษายน)' },
-  { val: '05', abbr: 'May', name: 'May (พฤษภาคม)' },
-  { val: '06', abbr: 'Jun', name: 'June (มิถุนายน)' },
-  { val: '07', abbr: 'Jul', name: 'July (กรกฎาคม)' },
-  { val: '08', abbr: 'Aug', name: 'August (สิงหาคม)' },
-  { val: '09', abbr: 'Sep', name: 'September (กันยายน)' },
-  { val: '10', abbr: 'Oct', name: 'October (ตุลาคม)' },
-  { val: '11', abbr: 'Nov', name: 'November (พฤศจิกายน)' },
-  { val: '12', abbr: 'Dec', name: 'December (ธันวาคม)' },
+interface MonthItem {
+  val: string;
+  abbr: string;
+  nameTh: string;
+  nameEn: string;
+}
+
+const MONTHS_LIST: MonthItem[] = [
+  { val: '01', abbr: 'Jan', nameTh: 'มกราคม', nameEn: 'January' },
+  { val: '02', abbr: 'Feb', nameTh: 'กุมภาพันธ์', nameEn: 'February' },
+  { val: '03', abbr: 'Mar', nameTh: 'มีนาคม', nameEn: 'March' },
+  { val: '04', abbr: 'Apr', nameTh: 'เมษายน', nameEn: 'April' },
+  { val: '05', abbr: 'May', nameTh: 'พฤษภาคม', nameEn: 'May' },
+  { val: '06', abbr: 'Jun', nameTh: 'มิถุนายน', nameEn: 'June' },
+  { val: '07', abbr: 'Jul', nameTh: 'กรกฎาคม', nameEn: 'July' },
+  { val: '08', abbr: 'Aug', nameTh: 'สิงหาคม', nameEn: 'August' },
+  { val: '09', abbr: 'Sep', nameTh: 'กันยายน', nameEn: 'September' },
+  { val: '10', abbr: 'Oct', nameTh: 'ตุลาคม', nameEn: 'October' },
+  { val: '11', abbr: 'Nov', nameTh: 'พฤศจิกายน', nameEn: 'November' },
+  { val: '12', abbr: 'Dec', nameTh: 'ธันวาคม', nameEn: 'December' },
 ];
 
 export const SettingsModal: React.FC<SettingsModalProps> = ({
@@ -62,7 +69,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
   onClose,
   onSyncComplete,
 }) => {
-  const { t } = useI18n();
+  const { t, locale } = useI18n();
   const toast = useToast();
 
   const [settings, setSettings] = useState<UserSettings>({
@@ -173,12 +180,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
         setBackfillStatus(data);
         toast.success(
           data.is_running
-            ? 'เริ่มการทยอยดึงประวัติราคา NAV เรียบร้อยแล้ว'
-            : 'พักการดึงประวัติราคา NAV ชั่วคราว'
+            ? t('backfillResumed')
+            : t('backfillPaused')
         );
       }
     } catch (err: any) {
-      toast.error(err.message || 'Error toggling backfill');
+      toast.error(err.message || t('backfillToggleError'));
     } finally {
       setBackfillLoading(false);
     }
@@ -188,7 +195,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
   // Real-time password calculations for previews
   const dayStr = settings.dob_day ? settings.dob_day.padStart(2, '0') : '01';
-  const monthObj = MONTHS_EN.find((m) => m.val === settings.dob_month) || MONTHS_EN[0];
+  const monthObj = MONTHS_LIST.find((m) => m.val === settings.dob_month) || MONTHS_LIST[0];
   const yearCE = settings.dob_year_ce || '1980';
   const yearBE = settings.dob_year_be || (parseInt(yearCE, 10) + 543).toString();
   const idLast5 = settings.national_id_last5 || 'XXXXX';
@@ -212,11 +219,11 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (brokerConfigs.length > 0) {
         await updateEmailBrokerConfigs(brokerConfigs);
       }
-      const msg = t('settingsSaved') || 'บันทึกการตั้งค่าเรียบร้อยแล้ว';
+      const msg = t('settingsSaved');
       setStatusMessage({ type: 'success', text: msg });
       toast.success(msg);
     } catch (e: any) {
-      const err = e.message || 'Failed to save settings';
+      const err = e.message || t('settingsSaveFailed');
       setStatusMessage({ type: 'error', text: err });
       toast.error(err);
     } finally {
@@ -230,12 +237,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       const defaults = await resetEmailBrokerConfigs();
       if (Array.isArray(defaults)) {
         setBrokerConfigs(defaults);
-        const msg = 'รีเซ็ตการตั้งค่าสถาบันการเงินเป็นค่าเริ่มต้นแล้ว';
+        const msg = t('resetBrokersSuccess');
         setStatusMessage({ type: 'success', text: msg });
         toast.success(msg);
       }
     } catch (e: any) {
-      const err = e.message || 'ไม่สามารถรีเซ็ตการตั้งค่าได้';
+      const err = e.message || t('resetBrokersFailed');
       setStatusMessage({ type: 'error', text: err });
       toast.error(err);
     } finally {
@@ -254,18 +261,18 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       if (res.success) {
         setTestResult({
           success: true,
-          message: res.message || `เชื่อมต่อสำเร็จ (พบ ${res.inbox_messages || 0} ข้อความ)`,
+          message: res.message || t('connectionSuccess', { count: res.inbox_messages || 0 }),
         });
       } else {
         setTestResult({
           success: false,
-          message: res.error || 'ไม่สามารถเชื่อมต่อได้ กรุณาตรวจสอบรหัสผ่าน App Password',
+          message: res.error || t('connectionFailedCheckPassword'),
         });
       }
     } catch (e: any) {
       setTestResult({
         success: false,
-        message: e.message || 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+        message: e.message || t('connectionError'),
       });
     } finally {
       setTesting(false);
@@ -282,7 +289,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
       await startEmailSync();
       setIsSyncTrackerOpen(true);
     } catch (e: any) {
-      setStatusMessage({ type: 'error', text: e.message || 'เกิดข้อผิดพลาดในการเริ่มสแกนอีเมล' });
+      setStatusMessage({ type: 'error', text: e.message || t('syncStartError') });
     } finally {
       setSyncing(false);
     }
@@ -319,7 +326,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
           {loading ? (
             <div className="py-12 flex flex-col items-center justify-center gap-3 text-slate-400">
               <RefreshCw className="w-6 h-6 animate-spin text-indigo-500" />
-              <p className="text-xs">กำลังโหลดข้อมูลการตั้งค่า...</p>
+              <p className="text-xs">{t('loadingSettings')}</p>
             </div>
           ) : (
             <>
@@ -355,7 +362,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 rel="noreferrer"
                 className="text-xs text-indigo-600 dark:text-indigo-400 hover:underline flex items-center gap-1 font-medium"
               >
-                <span>สร้าง App Password</span>
+                <span>{t('createAppPassword')}</span>
                 <ExternalLink className="w-3 h-3" />
               </a>
             </div>
@@ -400,7 +407,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              💡 {t('gmailPasswordHelp')} (รหัสผ่านนี้มีไว้สำหรับเข้าอ่าน Confirmation Note ผ่าน IMAP อย่างปลอดภัย)
+              💡 {t('gmailPasswordHelp')} ({t('gmailPasswordHelpDetail')})
             </p>
 
             <div className="flex items-center gap-3 pt-1">
@@ -445,7 +452,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-3">
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  วันเกิด (DD)
+                  {t('dobDay')}
                 </label>
                 <select
                   value={settings.dob_day || '01'}
@@ -465,16 +472,16 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  เดือนเกิด (MM)
+                  {t('dobMonth')}
                 </label>
                 <select
                   value={settings.dob_month || '01'}
                   onChange={(e) => setSettings({ ...settings, dob_month: e.target.value })}
                   className="w-full px-3 py-2 text-xs rounded-lg border border-slate-300 dark:border-slate-700 bg-white dark:bg-slate-900 text-slate-900 dark:text-white"
                 >
-                  {MONTHS_EN.map((m) => (
+                  {MONTHS_LIST.map((m) => (
                     <option key={m.val} value={m.val}>
-                      {m.val} - {m.name}
+                      {m.val} - {locale === 'th' ? `${m.nameEn} (${m.nameTh})` : m.nameEn}
                     </option>
                   ))}
                 </select>
@@ -482,7 +489,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  ปีเกิด ค.ศ. (CE)
+                  {t('dobYearCe')}
                 </label>
                 <input
                   type="text"
@@ -496,7 +503,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
               <div>
                 <label className="block text-xs font-medium text-slate-600 dark:text-slate-400 mb-1">
-                  เลขท้ายบัตร ปชช. (5 หลัก)
+                  {t('nationalIdLast5')}
                 </label>
                 <input
                   type="text"
@@ -514,7 +521,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
             {/* Institution Password Previews */}
             <div className="pt-2">
               <label className="block text-xs font-semibold text-slate-700 dark:text-slate-300 mb-2">
-                {t('tabBankPreview')} (ระบบจะจับคู่รหัสผ่านให้อัตโนมัติเมื่อพบเอกสารจากสถาบันนั้นๆ):
+                {t('tabBankPreview')} ({t('tabBankPreviewSubtitle')}):
               </label>
               <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5 text-xs">
                 <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80">
@@ -535,7 +542,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80">
                   <div className="font-semibold text-purple-600 dark:text-purple-400">SCB EASY / SCBAM</div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">เลขท้ายบัตร 5 หลัก</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">{t('idLast5Digits')}</div>
                   <div className="font-mono font-bold mt-1 text-slate-800 dark:text-slate-200">
                     {previewScb}
                   </div>
@@ -543,7 +550,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                 <div className="p-2.5 rounded-lg bg-white dark:bg-slate-900 border border-slate-200 dark:border-slate-700/80">
                   <div className="font-semibold text-teal-600 dark:text-teal-400">KASSET PVD</div>
-                  <div className="text-[11px] text-slate-500 dark:text-slate-400">DDMMYYYY (พ.ศ.)</div>
+                  <div className="text-[11px] text-slate-500 dark:text-slate-400">{t('dobFormatBe')}</div>
                   <div className="font-mono font-bold mt-1 text-slate-800 dark:text-slate-200">
                     {previewKassetPvd}
                   </div>
@@ -558,7 +565,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center gap-2">
                 <Building2 className="w-4 h-4 text-sky-500" />
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  การตั้งค่าสถาบันการเงิน & กฎการสแกน (Master Broker Rules)
+                  {t('masterBrokerRulesTitle')}
                 </h3>
               </div>
               <button
@@ -566,15 +573,15 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 onClick={handleResetBrokers}
                 disabled={resettingBrokers}
                 className="text-xs text-slate-500 hover:text-slate-700 dark:hover:text-slate-300 flex items-center gap-1 font-medium transition cursor-pointer disabled:opacity-50"
-                title="คืนค่าการตั้งค่าสถาบันการเงินเป็นค่าเริ่มต้นทั้งหมด"
+                title={t('resetBrokersTooltip')}
               >
                 <RotateCcw className={`w-3 h-3 ${resettingBrokers ? 'animate-spin' : ''}`} />
-                <span>รีเซ็ตเป็นค่าเริ่มต้น</span>
+                <span>{t('resetToDefaults')}</span>
               </button>
             </div>
 
             <p className="text-[11px] text-slate-500 dark:text-slate-400">
-              เปิด/ปิดการสแกนเฉพาะสถาบันที่ใช้งาน หรือแก้ไขที่อยู่อีเมลผู้ส่ง (Sender Emails) เพื่อความแม่นยำสูงสุด
+              {t('masterBrokerRulesDesc')}
             </p>
 
             <div className="space-y-3">
@@ -610,9 +617,9 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                       </span>
                     </div>
                     <span className="text-[10px] px-2 py-0.5 rounded-full font-medium bg-sky-50 dark:bg-sky-950/60 text-sky-700 dark:text-sky-300 border border-sky-200 dark:border-sky-800/60">
-                      {b.extraction_type === 'PDF_ATTACHMENT' && '📄 แนบไฟล์ PDF'}
-                      {b.extraction_type === 'HTML_BODY_TABLE' && '📧 ตารางในเนื้อหาเมล'}
-                      {b.extraction_type === 'PDF_POSITION_SNAPSHOT' && '📊 สรุปพอร์ตยอดสะสม'}
+                      {b.extraction_type === 'PDF_ATTACHMENT' && t('extractPdfAttachment')}
+                      {b.extraction_type === 'HTML_BODY_TABLE' && t('extractHtmlTable')}
+                      {b.extraction_type === 'PDF_POSITION_SNAPSHOT' && t('extractPositionSnapshot')}
                       {!['PDF_ATTACHMENT', 'HTML_BODY_TABLE', 'PDF_POSITION_SNAPSHOT'].includes(b.extraction_type) && b.extraction_type}
                     </span>
                   </div>
@@ -620,7 +627,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                   <div className="grid grid-cols-1 md:grid-cols-2 gap-3 text-xs mt-2">
                     <div>
                       <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                        อีเมลผู้ส่ง (Sender Emails คั่นด้วยจุลภาค)
+                        {t('senderEmailsLabel')}
                       </label>
                       <input
                         type="text"
@@ -639,12 +646,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
 
                     <div>
                       <label className="block text-[11px] font-medium text-slate-500 dark:text-slate-400 mb-1">
-                        รูปแบบรหัสผ่านที่ระบบใช้ (Password Patterns)
+                        {t('passwordPatternsLabel')}
                       </label>
                       <div className="px-2.5 py-1.5 rounded-lg border border-slate-200 dark:border-slate-800 bg-slate-50 dark:bg-slate-950/50 text-[11px] font-mono text-slate-600 dark:text-slate-400 truncate">
                         {b.password_patterns.length > 0
                           ? b.password_patterns.join(' | ')
-                          : 'ไม่ต้องใช้รหัสผ่าน (No Password)'}
+                          : t('noPasswordRequired')}
                       </div>
                     </div>
                   </div>
@@ -659,7 +666,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="flex items-center gap-2">
                 <Database className="w-4 h-4 text-emerald-500" />
                 <h3 className="text-sm font-bold text-slate-800 dark:text-slate-200">
-                  การทยอยดึงประวัติราคา NAV ย้อนหลัง (SEC API)
+                  {t('navBackfillTitle')}
                 </h3>
               </div>
               {backfillStatus && (
@@ -678,7 +685,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                           : 'bg-amber-500'
                       }`}
                     />
-                    {backfillStatus.is_running ? 'กำลังทำงานเบื้องหลัง' : 'พักชั่วคราว'}
+                    {backfillStatus.is_running ? t('backfillRunning') : t('backfillPausedStatus')}
                   </span>
                   <button
                     type="button"
@@ -693,12 +700,12 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                     {backfillStatus.is_running ? (
                       <>
                         <Pause className="w-3.5 h-3.5" />
-                        <span>พักการดึง</span>
+                        <span>{t('pauseBackfill')}</span>
                       </>
                     ) : (
                       <>
                         <Play className="w-3.5 h-3.5" />
-                        <span>เริ่มทยอยดึงต่อ</span>
+                        <span>{t('resumeBackfill')}</span>
                       </>
                     )}
                   </button>
@@ -710,8 +717,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               <div className="space-y-2">
                 <div className="flex justify-between text-xs text-slate-600 dark:text-slate-400">
                   <span>
-                    ความคืบหน้า: <strong className="text-slate-900 dark:text-white">{backfillStatus.completed_funds.toLocaleString()}</strong> จาก{' '}
-                    {backfillStatus.total_funds.toLocaleString()} กองทุน
+                    {t('backfillProgress', {
+                      completed: backfillStatus.completed_funds.toLocaleString(),
+                      total: backfillStatus.total_funds.toLocaleString(),
+                    })}
                   </span>
                   <span className="font-bold text-emerald-600 dark:text-emerald-400">
                     {backfillStatus.percent_completed.toFixed(1)}%
@@ -728,7 +737,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 {backfillStatus.is_running && backfillStatus.current_proj_id && (
                   <p className="text-[11px] text-slate-500 dark:text-slate-400 truncate flex items-center gap-1.5 pt-1">
                     <Activity className="w-3.5 h-3.5 text-indigo-400 animate-spin" />
-                    <span>กำลังประมวลผล:</span>
+                    <span>{t('processingFund')}:</span>
                     <span className="font-mono font-medium text-slate-800 dark:text-slate-200">
                       {backfillStatus.current_proj_abbr || backfillStatus.current_proj_id} ({backfillStatus.current_proj_id})
                     </span>
@@ -752,19 +761,19 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               </div>
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-2 text-xs pt-2">
                 <div className="bg-slate-800/80 p-2 rounded-lg">
-                  <span className="text-slate-400">สแกนอีเมล:</span>{' '}
+                  <span className="text-slate-400">{t('emailsScanned')}:</span>{' '}
                   <span className="font-bold">{syncResult.emails_scanned}</span>
                 </div>
                 <div className="bg-slate-800/80 p-2 rounded-lg">
-                  <span className="text-slate-400">พบไฟล์แนบ:</span>{' '}
+                  <span className="text-slate-400">{t('attachmentsFound')}:</span>{' '}
                   <span className="font-bold">{syncResult.attachments_found}</span>
                 </div>
                 <div className="bg-emerald-950/60 text-emerald-300 p-2 rounded-lg border border-emerald-800/50">
-                  <span>นำเข้าสำเร็จ:</span>{' '}
+                  <span>{t('importedSuccess')}:</span>{' '}
                   <span className="font-bold">{syncResult.transactions_inserted}</span>
                 </div>
                 <div className="bg-amber-950/60 text-amber-300 p-2 rounded-lg border border-amber-800/50">
-                  <span>ข้ามรายการซ้ำ:</span>{' '}
+                  <span>{t('skippedDuplicates')}:</span>{' '}
                   <span className="font-bold">{syncResult.transactions_skipped}</span>
                 </div>
               </div>
@@ -773,7 +782,7 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
                 <div className="flex flex-wrap items-center justify-between bg-indigo-950/60 border border-indigo-700/50 rounded-lg px-3 py-2 text-xs text-indigo-200 gap-1.5">
                   <div className="flex items-center gap-1.5">
                     <Sparkles className="w-3.5 h-3.5 text-indigo-400" />
-                    <span>Gemini AI Token ที่ใช้:</span>
+                    <span>{t('geminiTokensUsed')}:</span>
                   </div>
                   <div className="font-mono font-bold text-white">
                     {syncResult.tokens_used.total_tokens.toLocaleString()}{' '}
@@ -813,10 +822,10 @@ export const SettingsModal: React.FC<SettingsModalProps> = ({
               type="button"
               onClick={() => setIsCacheManagerOpen(true)}
               className="px-3 py-2 rounded-xl border border-amber-300 dark:border-amber-800 text-amber-700 dark:text-amber-400 hover:bg-amber-50 dark:hover:bg-amber-950/40 text-xs font-semibold transition cursor-pointer flex items-center gap-1.5"
-              title="จัดการแคชอีเมลและล้างประวัติเพื่อสแกนใหม่"
+              title={t('manageCacheTooltip')}
             >
               <RotateCw className="w-3.5 h-3.5" />
-              <span>จัดการแคช / สแกนใหม่</span>
+              <span>{t('manageCacheResync')}</span>
             </button>
           </div>
 

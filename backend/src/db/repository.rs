@@ -488,6 +488,56 @@ impl Repository {
         Ok(None)
     }
 
+    /// ตรวจสอบว่าข้อความมีคำสำคัญที่เกี่ยวกับสิทธิประโยชน์ทางภาษีหรือไม่ (SSF, RMF, ThaiESG)
+    pub fn contains_tax_keywords(text: &str) -> bool {
+        let upper = text.to_uppercase();
+        upper.contains("SSF")
+            || upper.contains("RMF")
+            || upper.contains("THAIESG")
+            || upper.contains("TESG")
+            || upper.contains("เพื่อการเลี้ยงชีพ")
+            || upper.contains("เพื่อการออม")
+            || upper.contains("ไทยเพื่อความยั่งยืน")
+    }
+
+    /// ตรวจสอบว่า Share Class เป็นคลาสเพื่อสิทธิประโยชน์ทางภาษีหรือไม่
+    pub fn is_tax_class(name: &str) -> bool {
+        Self::contains_tax_keywords(name)
+    }
+
+    /// ตรวจสอบ Tier 1: Retail Accumulation Class (`-A`, `(A)`, `AA`, etc.)
+    pub fn is_tier_1_retail_acc(name: &str) -> bool {
+        let upper = name.to_uppercase();
+        if Self::is_tax_class(&upper) {
+            return false;
+        }
+        upper.ends_with("-A")
+            || upper.ends_with("(A)")
+            || upper.ends_with("AA")
+            || upper.ends_with("-ACC")
+            || upper.ends_with("(ACC)")
+            || upper.contains("ACCUM")
+            || (upper.ends_with("A")
+                && !upper.ends_with("RMF")
+                && !upper.ends_with("SSF")
+                && !upper.ends_with("TESG"))
+    }
+
+    /// ตรวจสอบ Tier 2: Dividend Class (`-D`, `(D)`, `AD`, `DV`, etc.)
+    pub fn is_tier_2_dividend(name: &str) -> bool {
+        let upper = name.to_uppercase();
+        if Self::is_tax_class(&upper) {
+            return false;
+        }
+        upper.ends_with("-D")
+            || upper.ends_with("(D)")
+            || upper.ends_with("AD")
+            || upper.ends_with("-DIV")
+            || upper.ends_with("(DIV)")
+            || upper.ends_with("DV")
+            || upper.contains("DIVIDEND")
+    }
+
     /// ระบุ Share Class ที่แน่นอนของกองทุนด้วยราคาทำรายการ (Core Price-Assisted Share-Class Resolver)
     /// ค้นหารายการ NAV จาก fund_nav_history ตาม proj_id และ trans_date
     /// เปรียบเทียบ unit_price กับ sell_price, nav, buy_price ด้วย tolerance < 0.005 THB
@@ -498,11 +548,26 @@ impl Repository {
         trans_date: &str,
         unit_price: Decimal,
     ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
+        Self::resolve_share_class_by_price_with_hint(pool, proj_id, trans_date, unit_price, None).await
+    }
+
+    /// ระบุ Share Class พร้อมการวิเคราะห์ข้อความอ้างอิง (raw statement/broker hint)
+    /// ตามกฎ Heuristic Tiering Fallback & Off-Market Resolution:
+    /// - Tier 1: Retail Accumulation Class (`-A`, `(A)`, or base unitholder class)
+    /// - Tier 2: Dividend Class (`-D`, `(D)`)
+    /// - Tier 3: Tax-advantaged classes (`SSF`, `RMF`, `ThaiESG`) - เลือกได้เฉพาะเมื่อ hint มีคำบอกภาษีชัดเจนเท่านั้น
+    pub async fn resolve_share_class_by_price_with_hint(
+        pool: &DbPool,
+        proj_id: &str,
+        trans_date: &str,
+        unit_price: Decimal,
+        hint: Option<&str>,
+    ) -> Result<Option<String>, Box<dyn std::error::Error + Send + Sync>> {
         if proj_id.trim().is_empty() {
             return Ok(None);
         }
 
-        // 1. ดึงประวัติ NAV ของ proj_id ในวันที่ trans_date (หรือวันที่ใกล้เคียงก่อนหน้า)
+        // 1. ดึงประวัติ NAV ของ proj_id ในวันที่ trans_date
         let rows = sqlx::query(
             r#"
             SELECT fund_class_name, nav, sell_price, buy_price
@@ -517,6 +582,7 @@ impl Repository {
 
         let tolerance = Decimal::from_str("0.005").unwrap();
 
+        // 1.1 ตรวจสอบความตรงของราคา (Exact Price Matching < 0.005 THB)
         if unit_price > Decimal::ZERO {
             let mut best_match: Option<(String, Decimal)> = None;
 
@@ -554,59 +620,157 @@ impl Repository {
             if let Some((resolved_class, _)) = best_match {
                 return Ok(Some(resolved_class));
             }
-        }
 
-        // 2. Fallback: ถ้าไม่พบราคาที่ตรงกัน ให้เลือก Class A / Retail Class หรือชื่อกองทุนหลัก
-        // 2.1 ตรวจสอบว่าใน rows มี class ที่ลงท้ายด้วย -A, (A) หรือ AA
-        for r in &rows {
-            if let Some(c) = r.get::<Option<String>, _>("fund_class_name") {
-                let upper = c.to_uppercase();
-                if upper.ends_with("-A") || upper.ends_with("(A)") || upper.ends_with("AA") || upper.ends_with("A") {
-                    return Ok(Some(c));
+            // หากเป็นวันหยุดหรือไม่มีประวัติในวัน trans_date ให้ลองตรวจราคาในวันทำการล่าสุดก่อนหน้า <= trans_date
+            if rows.is_empty() {
+                let prev_rows = sqlx::query(
+                    r#"
+                    SELECT fund_class_name, nav, sell_price, buy_price
+                    FROM fund_nav_history
+                    WHERE proj_id = ?1 AND nav_date <= ?2
+                    ORDER BY nav_date DESC LIMIT 50
+                    "#
+                )
+                .bind(proj_id)
+                .bind(trans_date)
+                .fetch_all(pool)
+                .await?;
+
+                let mut prev_best: Option<(String, Decimal)> = None;
+                for r in &prev_rows {
+                    let class_name: String = r.get::<Option<String>, _>("fund_class_name").unwrap_or_default();
+                    let nav_str: Option<String> = r.get("nav");
+                    let sell_str: Option<String> = r.get("sell_price");
+                    let buy_str: Option<String> = r.get("buy_price");
+
+                    for p_str in [&sell_str, &nav_str, &buy_str].into_iter().flatten() {
+                        if let Ok(p) = Decimal::from_str(p_str) {
+                            if p > Decimal::ZERO {
+                                let diff = (p - unit_price).abs();
+                                if diff < tolerance {
+                                    let cname = if class_name.is_empty() || class_name == "main" {
+                                        None
+                                    } else {
+                                        Some(class_name.clone())
+                                    };
+                                    if let Some(c) = cname {
+                                        match &prev_best {
+                                            None => prev_best = Some((c, diff)),
+                                            Some((_, best_diff)) if diff < *best_diff => {
+                                                prev_best = Some((c, diff));
+                                            }
+                                            _ => {}
+                                        }
+                                    }
+                                }
+                            }
+                        }
+                    }
+                }
+                if let Some((resolved_class, _)) = prev_best {
+                    return Ok(Some(resolved_class));
                 }
             }
         }
 
-        // 2.2 ตรวจสอบใน fund_aliases
-        if let Ok(Some(row)) = sqlx::query(
-            r#"
-            SELECT canonical_abbr FROM fund_aliases 
-            WHERE proj_id = ?1 AND (canonical_abbr LIKE '%-A' OR alias LIKE '%-A' OR canonical_abbr LIKE '%AA' OR alias LIKE '%AA')
-            LIMIT 1
-            "#
-        )
-        .bind(proj_id)
-        .fetch_optional(pool)
-        .await {
-            return Ok(Some(row.get("canonical_abbr")));
-        }
-
-        // 2.3 ตรวจสอบใน fund_nav_history วันอื่นๆ ว่ามี class A หรือไม่
-        if let Ok(Some(row)) = sqlx::query(
-            r#"
-            SELECT fund_class_name FROM fund_nav_history
-            WHERE proj_id = ?1 AND (fund_class_name LIKE '%-A' OR fund_class_name LIKE '%(A)' OR fund_class_name LIKE '%AA')
-            ORDER BY nav_date DESC LIMIT 1
-            "#
-        )
-        .bind(proj_id)
-        .fetch_optional(pool)
-        .await {
-            let c: String = row.get("fund_class_name");
-            if !c.is_empty() {
-                return Ok(Some(c));
+        // 2. Heuristic Tiering Fallback & Off-Market Resolution
+        // รวบรวมรายชื่อ Share Classes ทั้งหมดของ proj_id
+        let mut candidate_classes: Vec<String> = Vec::new();
+        for r in &rows {
+            if let Some(c) = r.get::<Option<String>, _>("fund_class_name") {
+                let trimmed = c.trim().to_string();
+                if !trimmed.is_empty() && trimmed != "main" && !candidate_classes.contains(&trimmed) {
+                    candidate_classes.push(trimmed);
+                }
             }
         }
 
-        // 2.4 Single-class fund หรือดึง proj_abbr_name จาก funds
+        if candidate_classes.is_empty() {
+            let hist_classes: Vec<String> = sqlx::query_scalar(
+                r#"
+                SELECT DISTINCT fund_class_name
+                FROM fund_nav_history
+                WHERE proj_id = ?1 AND fund_class_name IS NOT NULL AND fund_class_name != '' AND fund_class_name != 'main'
+                ORDER BY nav_date DESC LIMIT 20
+                "#
+            )
+            .bind(proj_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            for c in hist_classes {
+                let trimmed = c.trim().to_string();
+                if !candidate_classes.contains(&trimmed) {
+                    candidate_classes.push(trimmed);
+                }
+            }
+        }
+
+        if candidate_classes.is_empty() {
+            let alias_classes: Vec<String> = sqlx::query_scalar(
+                r#"
+                SELECT DISTINCT canonical_abbr
+                FROM fund_aliases
+                WHERE proj_id = ?1 AND canonical_abbr IS NOT NULL AND canonical_abbr != '' AND canonical_abbr != 'main'
+                LIMIT 20
+                "#
+            )
+            .bind(proj_id)
+            .fetch_all(pool)
+            .await
+            .unwrap_or_default();
+
+            for c in alias_classes {
+                let trimmed = c.trim().to_string();
+                if !candidate_classes.contains(&trimmed) {
+                    candidate_classes.push(trimmed);
+                }
+            }
+        }
+
+        let allow_tax = hint.map(Self::contains_tax_keywords).unwrap_or(false);
+
+        // Tier 1: Retail Accumulation Class (`-A`, `(A)`, `AA`, or base retail class)
+        for c in &candidate_classes {
+            if Self::is_tier_1_retail_acc(c) {
+                return Ok(Some(c.clone()));
+            }
+        }
+
+        // Tier 2: Dividend Class (`-D`, `(D)`, `AD`, `DV`)
+        for c in &candidate_classes {
+            if Self::is_tier_2_dividend(c) {
+                return Ok(Some(c.clone()));
+            }
+        }
+
+        // Tier 3: Tax-advantaged classes (`SSF`, `RMF`, `ThaiESG`) - ONLY if hint explicitly contains tax keywords
+        if allow_tax {
+            for c in &candidate_classes {
+                if Self::is_tax_class(c) {
+                    return Ok(Some(c.clone()));
+                }
+            }
+        }
+
+        // Single-class fund or non-tax general class (e.g. SCBS&P500E, ES-GER)
+        for c in &candidate_classes {
+            if !Self::is_tax_class(c) {
+                return Ok(Some(c.clone()));
+            }
+        }
+
+        // Base proj_abbr_name from funds
         if let Ok(Some(row)) = sqlx::query("SELECT proj_abbr_name FROM funds WHERE proj_id = ?1 LIMIT 1")
             .bind(proj_id)
             .fetch_optional(pool)
-            .await {
+            .await
+        {
             let abbr: Option<String> = row.get("proj_abbr_name");
             if let Some(a) = abbr {
                 if !a.trim().is_empty() {
-                    return Ok(Some(a));
+                    return Ok(Some(a.trim().to_string()));
                 }
             }
         }
@@ -633,7 +797,8 @@ impl Repository {
         // ระบุ Share Class ตามราคาต่อหน่วย (unit_price) หากชื่อคลาสว่างหรือเป็นชื่อกองทุนหลัก (Bare Project Name)
         let mut resolved_fund_abbr = tx.fund_abbr.clone();
         if Self::is_bare_fund_name(tx.fund_abbr.as_deref(), &resolved_proj_id) {
-            if let Ok(Some(class_name)) = Self::resolve_share_class_by_price(pool, &resolved_proj_id, &tx.trans_date, tx.unit_price).await {
+            let hint = tx.note.as_deref().or(tx.fund_abbr.as_deref());
+            if let Ok(Some(class_name)) = Self::resolve_share_class_by_price_with_hint(pool, &resolved_proj_id, &tx.trans_date, tx.unit_price, hint).await {
                 resolved_fund_abbr = Some(class_name);
             }
         }
@@ -706,7 +871,8 @@ impl Repository {
             // ระบุ Share Class ตามราคาต่อหน่วย (unit_price) หากชื่อคลาสว่างหรือเป็นชื่อกองทุนหลัก (Bare Project Name)
             let mut resolved_fund_abbr = tx.fund_abbr.clone();
             if Self::is_bare_fund_name(tx.fund_abbr.as_deref(), &resolved_proj_id) {
-                if let Ok(Some(class_name)) = Self::resolve_share_class_by_price(pool, &resolved_proj_id, &tx.trans_date, tx.unit_price).await {
+                let hint = tx.note.as_deref().or(tx.fund_abbr.as_deref());
+                if let Ok(Some(class_name)) = Self::resolve_share_class_by_price_with_hint(pool, &resolved_proj_id, &tx.trans_date, tx.unit_price, hint).await {
                     resolved_fund_abbr = Some(class_name);
                 }
             }
@@ -1668,7 +1834,8 @@ impl Repository {
             // Price-assisted share class resolution
             if let Some(ref pid) = resolved_proj_id {
                 if Self::is_bare_fund_name(resolved_fund_abbr.as_deref(), pid) {
-                    if let Ok(Some(class_name)) = Self::resolve_share_class_by_price(pool, pid, &p.trans_date, p.unit_price).await {
+                    let hint = p.raw_fund_name.as_str();
+                    if let Ok(Some(class_name)) = Self::resolve_share_class_by_price_with_hint(pool, pid, &p.trans_date, p.unit_price, Some(hint)).await {
                         resolved_fund_abbr = Some(class_name);
                     }
                 }

@@ -232,6 +232,66 @@ export const translations = {
     logModeFriendly: '✨ สรุปเข้าใจง่าย (User-Friendly)',
     logModeRaw: '💻 ข้อความดิบ (Raw Log)',
     waitingForLogs: 'กำลังรอรับข้อมูล Log จาก Email Harvester...',
+
+    // Historical NAV Backfill Section & Controls
+    navBackfillTitle: 'การทยอยดึงประวัติราคา NAV ย้อนหลัง (SEC API)',
+    backfillRunning: 'กำลังทำงานเบื้องหลัง',
+    backfillPausedStatus: 'พักชั่วคราว',
+    pauseBackfill: 'พักการดึง',
+    resumeBackfill: 'เริ่มทยอยดึงต่อ',
+    backfillProgress: 'ความคืบหน้า: {completed} จาก {total} กองทุน',
+    processingFund: 'กำลังประมวลผล',
+    backfillResumed: 'เริ่มการทยอยดึงประวัติราคา NAV เรียบร้อยแล้ว',
+    backfillPaused: 'พักการดึงประวัติราคา NAV ชั่วคราว',
+    backfillToggleError: 'เกิดข้อผิดพลาดในการเปลี่ยนสถานะการดึงข้อมูล NAV',
+
+    // Settings Loading & Save Toasts
+    loadingSettings: 'กำลังโหลดข้อมูลการตั้งค่า...',
+    settingsSaveFailed: 'เกิดข้อผิดพลาดในการบันทึกการตั้งค่า',
+    resetBrokersSuccess: 'รีเซ็ตการตั้งค่าสถาบันการเงินเป็นค่าเริ่มต้นแล้ว',
+    resetBrokersFailed: 'ไม่สามารถรีเซ็ตการตั้งค่าสถาบันการเงินได้',
+    connectionSuccess: 'เชื่อมต่อสำเร็จ (พบ {count} ข้อความ)',
+    connectionFailedCheckPassword: 'ไม่สามารถเชื่อมต่อได้ กรุณาตรวจสอบรหัสผ่าน App Password',
+    connectionError: 'เกิดข้อผิดพลาดในการเชื่อมต่อ',
+    syncStartError: 'เกิดข้อผิดพลาดในการเริ่มสแกนอีเมล',
+
+    // AMC & Email Statement Password Configuration
+    createAppPassword: 'สร้าง App Password',
+    gmailPasswordHelpDetail: 'รหัสผ่านนี้มีไว้สำหรับเข้าอ่าน Confirmation Note ผ่าน IMAP อย่างปลอดภัย',
+    dobDay: 'วันเกิด (DD)',
+    dobMonth: 'เดือนเกิด (MM)',
+    dobYearCe: 'ปีเกิด ค.ศ. (CE)',
+    nationalIdLast5: 'เลขท้ายบัตร ปชช. (5 หลัก)',
+    tabBankPreviewSubtitle: 'ระบบจะจับคู่รหัสผ่านให้อัตโนมัติเมื่อพบเอกสารจากสถาบันนั้นๆ',
+    idLast5Digits: 'เลขท้ายบัตร 5 หลัก',
+    dobFormatBe: 'DDMMYYYY (พ.ศ.)',
+    dobFormatCe: 'DDMMYYYY (ค.ศ.)',
+
+    // Master Broker Rules & Extraction Configuration
+    masterBrokerRulesTitle: 'การตั้งค่าสถาบันการเงิน & กฎการสแกน (Master Broker Rules)',
+    resetToDefaults: 'รีเซ็ตเป็นค่าเริ่มต้น',
+    resetBrokersTooltip: 'คืนค่าการตั้งค่าสถาบันการเงินเป็นค่าเริ่มต้นทั้งหมด',
+    masterBrokerRulesDesc: 'เปิด/ปิดการสแกนเฉพาะสถาบันที่ใช้งาน หรือแก้ไขที่อยู่อีเมลผู้ส่ง (Sender Emails) เพื่อความแม่นยำสูงสุด',
+    extractPdfAttachment: '📄 แนบไฟล์ PDF',
+    extractHtmlTable: '📧 ตารางในเนื้อหาเมล',
+    extractPositionSnapshot: '📊 สรุปพอร์ตยอดสะสม',
+    senderEmailsLabel: 'อีเมลผู้ส่ง (Sender Emails คั่นด้วยจุลภาค)',
+    passwordPatternsLabel: 'รูปแบบรหัสผ่านที่ระบบใช้ (Password Patterns)',
+    noPasswordRequired: 'ไม่ต้องใช้รหัสผ่าน (No Password)',
+
+    // Live Sync Summary & Cache Management
+    emailsScanned: 'สแกนอีเมล',
+    attachmentsFound: 'พบไฟล์แนบ',
+    importedSuccess: 'นำเข้าสำเร็จ',
+    skippedDuplicates: 'ข้ามรายการซ้ำ',
+    geminiTokensUsed: 'Gemini AI Token ที่ใช้',
+    manageCacheResync: 'จัดการแคช / สแกนใหม่',
+    manageCacheTooltip: 'จัดการแคชอีเมลและล้างประวัติเพื่อสแกนใหม่',
+
+    // Share Class Selector (Task 36.5)
+    shareClasses: 'ชนิดหน่วยลงทุน (Share Classes)',
+    switchClass: 'สลับคลาส',
+    switchToClass: 'สลับไปที่ {name}',
   },
   en: {
     appTitle: 'Fund Portfolio',
@@ -459,6 +519,66 @@ export const translations = {
     logModeFriendly: '✨ Friendly View',
     logModeRaw: '💻 Raw Log',
     waitingForLogs: 'Waiting for live logs from Email Harvester...',
+
+    // Historical NAV Backfill Section & Controls
+    navBackfillTitle: 'Historical NAV Backfill (SEC API)',
+    backfillRunning: 'Running in Background',
+    backfillPausedStatus: 'Paused',
+    pauseBackfill: 'Pause Backfill',
+    resumeBackfill: 'Resume Backfill',
+    backfillProgress: 'Progress: {completed} of {total} funds',
+    processingFund: 'Processing',
+    backfillResumed: 'Historical NAV backfill started',
+    backfillPaused: 'Historical NAV backfill paused',
+    backfillToggleError: 'Error toggling NAV backfill status',
+
+    // Settings Loading & Save Toasts
+    loadingSettings: 'Loading settings...',
+    settingsSaveFailed: 'Failed to save settings',
+    resetBrokersSuccess: 'Reset institution settings to defaults successfully',
+    resetBrokersFailed: 'Failed to reset institution settings',
+    connectionSuccess: 'Connected successfully (found {count} messages)',
+    connectionFailedCheckPassword: 'Unable to connect. Please check your App Password',
+    connectionError: 'Error testing connection',
+    syncStartError: 'Failed to start email sync',
+
+    // AMC & Email Statement Password Configuration
+    createAppPassword: 'Create App Password',
+    gmailPasswordHelpDetail: 'This password is used to securely read Confirmation Notes via IMAP',
+    dobDay: 'Birth Day (DD)',
+    dobMonth: 'Birth Month (MM)',
+    dobYearCe: 'Birth Year (CE)',
+    nationalIdLast5: 'National ID Last 5 Digits',
+    tabBankPreviewSubtitle: 'System will automatically match passwords when documents are found',
+    idLast5Digits: 'Last 5 digits of ID',
+    dobFormatBe: 'DDMMYYYY (BE)',
+    dobFormatCe: 'DDMMYYYY (CE)',
+
+    // Master Broker Rules & Extraction Configuration
+    masterBrokerRulesTitle: 'Master Broker Rules & Extraction Configuration',
+    resetToDefaults: 'Reset to Defaults',
+    resetBrokersTooltip: 'Restore all institution configs to default settings',
+    masterBrokerRulesDesc: 'Enable or disable scanning for specific institutions, or customize sender emails for maximum precision',
+    extractPdfAttachment: '📄 PDF Attachment',
+    extractHtmlTable: '📧 HTML Email Table',
+    extractPositionSnapshot: '📊 Portfolio Position Snapshot',
+    senderEmailsLabel: 'Sender Emails (comma separated)',
+    passwordPatternsLabel: 'Password Patterns Used',
+    noPasswordRequired: 'No Password Required',
+
+    // Live Sync Summary & Cache Management
+    emailsScanned: 'Emails Scanned',
+    attachmentsFound: 'Attachments Found',
+    importedSuccess: 'Imported',
+    skippedDuplicates: 'Duplicates Skipped',
+    geminiTokensUsed: 'Gemini AI Tokens Used',
+    manageCacheResync: 'Manage Cache / Resync',
+    manageCacheTooltip: 'Manage email cache and clear history to resync',
+
+    // Share Class Selector (Task 36.5)
+    shareClasses: 'Share Classes',
+    switchClass: 'Switch Class',
+    switchToClass: 'Switch to {name}',
   },
 };
 

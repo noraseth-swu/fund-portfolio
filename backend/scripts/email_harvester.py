@@ -859,93 +859,6 @@ def extract_transactions_with_gemini(text_content, api_key):
     logger.error("[!] All Gemini models exhausted or failed for this document.")
     return [], empty_usage, False
 
-KNOWN_FUND_ALIASES = {
-    # TISCO Strategic
-    "TISCOSTRAT-A": "TSF-A",
-    "TISCOSTR-A": "TSF-A",
-    "TISCOSTRAT": "TSF-A",
-    "TISCOSTR": "TSF-A",
-    "TISCO STRATEGIC FUND CLASS A": "TSF-A",
-    "TISCO STRATEGIC FUND": "TSF-A",
-    "TSF": "TSF-A",
-    "TSF-A": "TSF-A",
-    # SCB S&P 500
-    "SP500E": "SCBS&P500E",
-    "SCBSP500E": "SCBS&P500E",
-    "SCBS&P500E": "SCBS&P500E",
-    "SCBS&P500": "SCBS&P500",
-    "SCB S&P 500 INDEX FUND": "SCBS&P500",
-    # SCB China A Shares
-    "SCBCHAA": "SCBCHAFUND",
-    "SCBCHA(A)": "SCBCHAFUND",
-    "SCBCHINA(A)": "SCBCHAFUND",
-    "SCB CHINA A-SHARES FUND (ACCUMULATION)": "SCBCHAFUND",
-    "SCB CHINA A-SHARES FUND": "SCBCHAFUND",
-    "SCBCHINA": "SCBCHAFUND",
-    # SCB Nasdaq
-    "SCBNDQ(E)": "SCBNDQ(E)",
-    "SCB NDQ(E)": "SCBNDQ(E)",
-    "SCBNDQE": "SCBNDQ(E)",
-    "NDQ(E)": "SCBNDQ(E)",
-    # Eastspring / ttb
-    "EASTSPRING ASIA ACTIVE EQUITY FUND (ACCUMULATION CLASS)": "ES-ASIA-A",
-    "EASTSPRING ASIA ACTIVE EQUITY FUND": "ES-ASIA-A",
-    "TMB EASTSPRING ASIA ACTIVE FUND": "ES-ASIA-A",
-    "ES-ASIAEQ": "ES-ASIA-A",
-    "ES-ASIA": "ES-ASIA-A",
-    "EASTSPRING-AAEF": "ES-ASIA-A",
-    "EASTSPRING GIS GLOBAL BOND FUND (ACCUMULATION)": "ES-GF-A",
-    "EASTSPRING GIS GLOBAL BOND FUND": "ES-GF-A",
-    "EASTSPRING-GIS": "ES-GF-A",
-    "ES-GF": "ES-GF-A",
-    "ES-GF-A": "ES-GF-A",
-    "T-ES-GF": "ES-GF-A",
-    "TESGF": "ES-GF-A",
-    "ES-GERMAN": "ES-GER",
-    "EASTSPRING-GERMAN": "ES-GER",
-    "EASTSPRING GERMANY EQUITY FUND": "ES-GER",
-    "TMB GERMAN EQUITY FUND": "ES-GER",
-    "KTAM CAPITAL SECURITIES FUND - CLASS A": "KT-CSBOND-A",
-    "KTAM CAPITAL SECURITIES FUND": "KT-CSBOND-A",
-    "EASTSPRING US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
-    "EASTSPRING-USBLUE": "ES-USBLUECHIP",
-    "TMB US BLUE CHIP EQUITY FUND": "ES-USBLUECHIP",
-    "EASTSPRING GLOBAL CORE EQUITY FUND": "ES-GCORE",
-    "EASTSPRING-GCEF": "ES-GCORE",
-    "TMB EASTSPRING GLOBAL CORE EQUITY FUND": "ES-GCORE",
-    "EASTSPRING GLOBAL DIVIDEND EQUITY FUND": "ES-GDIV",
-    "EASTSPRING-GDEF": "ES-GDIV",
-    "ES-GDIV-ACC": "ES-GDIV",
-    "EASTSPRING US INFORMATION TECHNOLOGY FUND": "ES-USTECH",
-    "EASTSPRING-USTECH": "ES-USTECH",
-    "TTB-SMART-PORT-4": "tsp4-explorer",
-    # ONE European Equity
-    "ONE EUROPEAN EQUITY FUND": "ONE-EUROEQ",
-    "ONE-EUROPEAN": "ONE-EUROEQ",
-    "ONE-EUROPE": "ONE-EUROEQ",
-    # Dime KKP funds (Normalize to SEC canonical master data)
-    "KKP NDQ100-UH-E": "KKP NDQ100-UH FUND",
-    "KKP NDQ100-UH": "KKP NDQ100-UH FUND",
-    "KKP US500-UH-E": "KKP US500-UH FUND",
-    "KKP US500-UH": "KKP US500-UH FUND",
-    # Kasikorn
-    "WEALTH PLUS SPEED4B": "K-WPSPEEDUP",
-    "WEALTHPLUS SPEEDUP": "K-WPSPEEDUP",
-    "K-FIXEDPLUS-A": "K-FIXEDPLUS",
-}
-
-def load_extra_aliases_into_dict(target_dict, alias_file_path):
-    try:
-        if os.path.exists(alias_file_path):
-            with open(alias_file_path, "r", encoding="utf-8") as af:
-                loaded = json.load(af)
-                for k, v in loaded.items():
-                    target_dict[k.upper()] = v
-    except Exception as e:
-        logger.warning(f"Could not load fund_aliases.json: {e}")
-
-load_extra_aliases_into_dict(KNOWN_FUND_ALIASES, os.path.join(os.path.dirname(os.path.abspath(__file__)), "fund_aliases.json"))
-
 BLACKLISTED_NAMES = {
     "purchase (plan)", "ซื้อสม่ำเสมอ", "purchase", "sell", "dividend", 
     "subscription", "redemption", "สับเปลี่ยนเข้า", "สับเปลี่ยนออก", 
@@ -1018,12 +931,13 @@ def match_fund_with_confidence(conn, fund_code: str) -> dict:
     except sqlite3.OperationalError:
         pass
 
-    # 1. Alias map (EXACT)
-    if upper_code in KNOWN_FUND_ALIASES:
-        target = KNOWN_FUND_ALIASES[upper_code]
-        c.execute("""SELECT proj_id, proj_abbr_name, proj_name_th, proj_name_en
-                     FROM funds WHERE UPPER(proj_abbr_name) = ? LIMIT 1""",
-                  (target.upper(),))
+    # 1. Exact match fund_class_name in fund_nav_history (SEC registered share class)
+    try:
+        c.execute("""SELECT nh.proj_id, nh.fund_class_name, f.proj_name_th, f.proj_name_en
+                     FROM fund_nav_history nh
+                     JOIN funds f ON nh.proj_id = f.proj_id
+                     WHERE UPPER(nh.fund_class_name) = ? LIMIT 1""",
+                  (upper_code,))
         row = c.fetchone()
         if row:
             return {
@@ -1031,38 +945,8 @@ def match_fund_with_confidence(conn, fund_code: str) -> dict:
                 "fund_name_th": row[2], "fund_name_en": row[3],
                 "match_confidence": "EXACT"
             }
-        # Check fund_nav_history classes
-        try:
-            c.execute("""SELECT nh.proj_id, nh.fund_class_name, f.proj_name_th, f.proj_name_en
-                         FROM fund_nav_history nh
-                         JOIN funds f ON nh.proj_id = f.proj_id
-                         WHERE UPPER(nh.fund_class_name) = ? LIMIT 1""",
-                      (target.upper(),))
-            row = c.fetchone()
-            if row:
-                return {
-                    "proj_id": row[0], "fund_abbr": row[1],
-                    "fund_name_th": row[2], "fund_name_en": row[3],
-                    "match_confidence": "EXACT"
-                }
-        except sqlite3.OperationalError:
-            pass
-
-        # Check if stripping class suffix matches parent fund in funds
-        base_target = re.sub(r'[\(\-]?(E|A|P|SSF|SSFE|SSFA|X|D)\)?$', '', target.upper()).strip()
-        if base_target and base_target != target.upper():
-            c.execute("""SELECT proj_id, proj_abbr_name, proj_name_th, proj_name_en
-                         FROM funds WHERE UPPER(proj_abbr_name) = ? LIMIT 1""",
-                      (base_target,))
-            row = c.fetchone()
-            if row:
-                return {
-                    "proj_id": row[0], "fund_abbr": target,
-                    "fund_name_th": row[2], "fund_name_en": row[3],
-                    "match_confidence": "EXACT"
-                }
-        clean_code = target
-        upper_code = target.upper()
+    except sqlite3.OperationalError:
+        pass
 
     # 2. Exact match proj_abbr_name
     c.execute("""SELECT proj_id, proj_abbr_name, proj_name_th, proj_name_en
@@ -1257,14 +1141,19 @@ def match_fund_in_db(conn, fund_code):
     if clean_code.lower() in BLACKLISTED_NAMES:
         return None, None
 
-    # Check known alias dictionary first
-    if upper_code in KNOWN_FUND_ALIASES:
-        target_abbr = KNOWN_FUND_ALIASES[upper_code]
-        c.execute("SELECT proj_id, proj_abbr_name FROM funds WHERE UPPER(proj_abbr_name) = ? LIMIT 1", (target_abbr.upper(),))
+    # Check dynamic fund_aliases table first
+    try:
+        c.execute("""
+            SELECT a.proj_id, a.canonical_abbr 
+            FROM fund_aliases a 
+            WHERE UPPER(a.alias) = ? OR UPPER(a.canonical_abbr) = ?
+            LIMIT 1
+        """, (upper_code, upper_code))
         row = c.fetchone()
         if row:
             return row[0], row[1]
-        clean_code = target_abbr
+    except sqlite3.OperationalError:
+        pass
 
     # 1. Exact match proj_abbr_name
     c.execute("SELECT proj_id, proj_abbr_name FROM funds WHERE LOWER(proj_abbr_name) = LOWER(?) LIMIT 1", (clean_code,))
